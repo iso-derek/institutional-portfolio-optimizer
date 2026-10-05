@@ -24,7 +24,7 @@ class DashboardTests(unittest.TestCase):
         with patch("data_generation.fetch_price_data", side_effect=offline_prices):
             app = AppTest.from_file(str(ROOT / "app.py"), default_timeout=45).run()
             self.assertEqual(len(app.exception), 0)
-            self.assertEqual([tab.label for tab in app.tabs], ["Performance", "Risk", "Diversification", "Optimisation", "Research lab", "Learning guide", "Data"])
+            self.assertEqual([tab.label for tab in app.tabs], ["Performance", "Risk", "Diversification", "Optimisation", "Research lab", "Stress lab", "Learning guide", "Data"])
             self.assertTrue(any("SYNTHETIC DEMONSTRATION" in warning.value for warning in app.warning))
             next(widget for widget in app.selectbox if widget.label == "One-day tail confidence").set_value(.99).run()
             self.assertEqual(len(app.exception), 0)

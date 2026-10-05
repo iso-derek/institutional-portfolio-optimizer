@@ -14,6 +14,7 @@ import pandas as pd
 from analytics import (TRADING_DAYS, annualized_return, annualized_volatility,
                        conditional_var, max_drawdown, sharpe_ratio)
 from modelling import minimum_volatility_portfolio
+from robust_allocations import robust_allocation, volatility_state
 
 STRATEGIES = ("Equal weight", "Minimum volatility", "Capped minimum volatility")
 
@@ -48,8 +49,11 @@ def walk_forward_study(
     cost_bps: float = 10.0,
     risk_free_rate: float = .02,
     confidence: float = .95,
+    extended: bool = False,
+    volatility_trigger: float = 1.25,
+    defensive_exposure: float = .5,
 ) -> dict[str, object]:
-    """Compare three strategies on exactly the same out-of-sample dates."""
+    """Compare allocation rules on identical later dates with cash-aware drift."""
     if returns.empty or returns.columns.has_duplicates or returns.index.has_duplicates or not returns.index.is_monotonic_increasing:
         raise ValueError("Supply chronological returns with unique dates and asset columns.")
     if not np.isfinite(returns.to_numpy()).all() or (returns <= -1).any().any():
@@ -66,10 +70,17 @@ def walk_forward_study(
     if not np.isfinite(risk_free_rate) or not 0 <= risk_free_rate <= .2 or not 0 < confidence < 1:
         raise ValueError("Use a risk-free rate between 0% and 20% and a confidence between 0 and 1.")
 
+    if "__CASH__" in returns.columns:
+        raise ValueError("__CASH__ is reserved for research cash holdings.")
+    volatility_state(returns.iloc[:lookback], volatility_trigger, defensive_exposure)
+    strategies = list(STRATEGIES)
+    if extended:
+        strategies += ["Shrunk minimum volatility", "Shrinkage risk parity", "Static defensive risk parity", "Volatility-adaptive risk parity"]
+    cash_return = (1 + risk_free_rate) ** (1 / TRADING_DAYS) - 1
     test_index = returns.index[lookback:]
-    net = pd.DataFrame(index=test_index, columns=STRATEGIES, dtype=float)
+    net = pd.DataFrame(index=test_index, columns=strategies, dtype=float)
     gross = net.copy()
-    current = {name: np.zeros(n_assets) for name in STRATEGIES}
+    current = {name: np.r_[np.zeros(n_assets), 1.] for name in strategies}
     trade_records, weight_records, failures = [], [], []
     rate = cost_bps / 10000
 
@@ -81,19 +92,32 @@ def walk_forward_study(
             targets[name] = fitted["weights"].to_numpy()
             if not fitted["success"]:
                 failures.append({"date": returns.index[offset], "strategy": name, "message": fitted["message"]})
+        state = volatility_state(training, volatility_trigger, defensive_exposure)
+        if extended:
+            minimum = robust_allocation(training, "minimum_volatility")
+            parity = robust_allocation(training, "risk_parity")
+            targets["Shrunk minimum volatility"] = minimum["weights"]
+            targets["Shrinkage risk parity"] = parity["weights"]
+            targets["Static defensive risk parity"] = parity["weights"] * defensive_exposure
+            targets["Volatility-adaptive risk parity"] = parity["weights"] * state["exposure"]
+            for label, fit in [("Shrunk minimum volatility", minimum), ("Shrinkage risk parity", parity)]:
+                if not fit["success"]:
+                    failures.append({"date": returns.index[offset], "strategy": label, "message": fit["message"]})
+        targets = {name: np.r_[w, max(0., 1 - w.sum())] for name, w in targets.items()}
         block = returns.iloc[offset:offset + rebalance_every]
         for name, target in targets.items():
-            traded = float(np.abs(target - current[name]).sum())
+            traded = float(np.abs(target[:n_assets] - current[name][:n_assets]).sum())
             fee_fraction = rate * traded
             trade_records.append({"Date": block.index[0], "strategy": name,
                                   "training_end": training.index[-1], "traded_fraction": traded,
-                                  "cost_fraction": fee_fraction, "largest_target_weight": float(target.max())})
+                                  "cost_fraction": fee_fraction, "largest_target_weight": float(target[:n_assets].max()),
+                                  "cash_target": float(target[-1]), "volatility_ratio": state["ratio"]})
             weight_records.append({"Date": block.index[0], "strategy": name,
                                    "training_end": training.index[-1],
-                                   **{asset: float(w) for asset, w in zip(returns.columns, target)}})
+                                   **{asset: float(w) for asset, w in zip(returns.columns, target)}, "__CASH__": float(target[-1])})
             held = target.copy()
             for day, (timestamp, row) in enumerate(block.iterrows()):
-                asset_return = row.to_numpy()
+                asset_return = np.r_[row.to_numpy(), cash_return]
                 gross_return = float(held @ asset_return)
                 gross.loc[timestamp, name] = gross_return
                 net.loc[timestamp, name] = (1 - (fee_fraction if day == 0 else 0)) * (1 + gross_return) - 1
@@ -102,7 +126,7 @@ def walk_forward_study(
 
     trades = pd.DataFrame(trade_records)
     summary = []
-    for name in STRATEGIES:
+    for name in strategies:
         r = net[name]
         difference = r - net[STRATEGIES[0]]
         low, high = paired_block_interval(difference, block_size=rebalance_every)
@@ -121,4 +145,6 @@ def walk_forward_study(
             "settings": {"lookback": lookback, "rebalance_every": rebalance_every,
                          "max_weight": max_weight, "cost_bps": cost_bps,
                          "risk_free_rate": risk_free_rate, "confidence": confidence,
+                         "extended": extended, "volatility_trigger": volatility_trigger,
+                         "defensive_exposure": defensive_exposure, "cash_annual_rate": risk_free_rate,
                          "bootstrap_draws": 500, "bootstrap_seed": 42, "bootstrap_block": rebalance_every}}

@@ -142,3 +142,15 @@ highest realised return in one sample.
 
 - [scikit-learn: time-ordered train/test splits](https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.TimeSeriesSplit.html) — the chronology principle; this project implements its own rolling allocation loop.
 - [arch: circular block bootstrap](https://bashtage.github.io/arch/bootstrap/generated/arch.bootstrap.CircularBlockBootstrap.html) — resampling equal-length blocks with circular wrapping; the small paired-mean implementation here uses NumPy.
+
+## Phase 2: covariance, risk budgeting and cash adaptation
+
+The extended study adds Ledoit–Wolf shrunk minimum variance, shrinkage risk parity, static defensive risk parity, and volatility-adaptive risk parity to the original three rules. All covariance estimates and volatility states use only the preceding training window. Risk parity targets equal contributions under the shrunk covariance; degenerate covariance or solver failure is disclosed.
+
+The adaptive rule compares trailing 21-day equal-weight proxy volatility with full-window volatility. A ratio above 1.25 reduces risky exposure to 50%; otherwise it remains fully invested. The static defensive control always holds 50% risky assets. Cash earns an assumed constant 2% annual rate, not historical bill returns. Weights drift between rebalances, and risky buys plus sells incur the same cost model. Cash transfers are not additionally charged. Static and adaptive controls do not have matched average exposure, so a return advantage cannot alone demonstrate timing skill.
+
+Default fixed design: 126 training observations, rebalance every 21 observations, 10 bps per risky traded notional, concentration cap .35 for the capped strategy only. Risk-parity and uncapped rules are not subject to that cap. The CLI uses a fixed three-symbol universe and fixed dates. `--live` requires complete downloaded adjusted prices and rejects synthetic substitution. The default CLI explicitly generates synthetic data.
+
+`python scripts/run_research.py` exports prices, strategy returns, target weights, trades, settings, data hash and paired 21-day-block intervals. The adaptive/static interval resamples their same-date return difference; it is exploratory, not corrected for specification search and is not evidence of market alpha when applied to synthetic paths.
+
+The Stress lab uses user-supplied asset classes, currencies and modified duration. Bonds receive a first-order -duration × yield-change approximation; local asset shocks compound with FX, and real wealth is nominal wealth divided by 1 + assumed inflation. This is a single-horizon scenario, excluding convexity, defaults, carry, changing correlation and path effects. It is not a macroeconomic forecast.
