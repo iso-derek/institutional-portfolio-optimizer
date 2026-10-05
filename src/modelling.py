@@ -25,18 +25,25 @@ def expected_portfolio_return(returns: pd.DataFrame, weights: np.ndarray) -> flo
 
 def expected_sharpe(returns: pd.DataFrame, weights: np.ndarray, risk_free_rate: float = 0.02) -> float:
     vol = expected_volatility(returns, weights)
-    return (expected_portfolio_return(returns, weights) - risk_free_rate) / vol if vol else 0.0
+    daily_rf = (1 + risk_free_rate) ** (1 / TRADING_DAYS) - 1
+    return (expected_portfolio_return(returns, weights) - daily_rf * TRADING_DAYS) / vol if vol > 1e-12 else np.nan
 
 
-def _optimize(returns: pd.DataFrame, objective, risk_free_rate: float = 0.02) -> dict[str, object]:
+def _optimize(returns: pd.DataFrame, objective, risk_free_rate: float = 0.02, max_weight: float = 1.0) -> dict[str, object]:
     n_assets = len(returns.columns)
+    if n_assets == 0 or not np.isfinite(max_weight) or not 0 < max_weight <= 1 or n_assets * max_weight < 1 - 1e-10:
+        raise ValueError("The maximum weight must be feasible: number of assets × cap must be at least 100%.")
     initial = np.repeat(1 / n_assets, n_assets)
-    bounds = [(0, 1)] * n_assets
+    bounds = [(0, max_weight)] * n_assets
     constraints = {"type": "eq", "fun": lambda w: np.sum(w) - 1}
     try:
         result = minimize(objective, initial, method="SLSQP", bounds=bounds, constraints=constraints)
-        weights = result.x if result.success else initial
-    except Exception:
+        success = bool(result.success)
+        message = str(result.message)
+        weights = result.x if success else initial
+    except Exception as exc:
+        success = False
+        message = str(exc)
         weights = initial
     weights = np.clip(weights, 0, 1)
     weights = weights / weights.sum() if weights.sum() else initial
@@ -45,6 +52,8 @@ def _optimize(returns: pd.DataFrame, objective, risk_free_rate: float = 0.02) ->
         "expected_return": expected_portfolio_return(returns, weights),
         "expected_volatility": expected_volatility(returns, weights),
         "expected_sharpe": expected_sharpe(returns, weights, risk_free_rate),
+        "success": success,
+        "message": message,
     }
 
 
@@ -52,8 +61,8 @@ def maximum_sharpe_portfolio(returns: pd.DataFrame, risk_free_rate: float = 0.02
     return _optimize(returns, lambda w: -expected_sharpe(returns, w, risk_free_rate), risk_free_rate)
 
 
-def minimum_volatility_portfolio(returns: pd.DataFrame, risk_free_rate: float = 0.02) -> dict[str, object]:
-    return _optimize(returns, lambda w: expected_volatility(returns, w), risk_free_rate)
+def minimum_volatility_portfolio(returns: pd.DataFrame, risk_free_rate: float = 0.02, max_weight: float = 1.0) -> dict[str, object]:
+    return _optimize(returns, lambda w: expected_volatility(returns, w), risk_free_rate, max_weight=max_weight)
 
 
 def monte_carlo_simulation(
