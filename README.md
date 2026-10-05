@@ -207,3 +207,14 @@ The dashboard helps answer:
 
 Derek Ohimai Isokpehi  
 GitHub: [iso-derek](https://github.com/iso-derek)
+
+## Extended allocation and stress research
+
+The Research tab now offers seven walk-forward allocation rules: the original three plus covariance-shrunk minimum variance, shrinkage risk parity, static cash defence and volatility-adaptive cash defence. All decisions use past observations; cash, drift and trading costs are explicit. The Stress lab adds user-specified bond-duration, currency and inflation assumptions.
+
+```bash
+python scripts/run_research.py          # explicitly synthetic reproducible study
+python scripts/run_research.py --live   # requires complete real adjusted prices
+```
+
+See the [extended protocol](docs/RESEARCH_PROTOCOL.md) and [recorded results](docs/RESEARCH_RESULTS.md). The recorded experiment is synthetic because the real-price provider was rate-limited; it is not evidence of investment outperformance.

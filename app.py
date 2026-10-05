@@ -23,7 +23,8 @@ from analytics import portfolio_metrics  # noqa: E402
 from data_generation import DEFAULT_TICKERS, fetch_price_data  # noqa: E402
 from modelling import black_litterman_placeholder, maximum_sharpe_portfolio, minimum_volatility_portfolio, monte_carlo_simulation  # noqa: E402
 from preprocessing import calculate_returns, clean_prices, normalize_weights  # noqa: E402
-from research import walk_forward_study  # noqa: E402
+from research import walk_forward_study
+from stress import stress_portfolio  # noqa: E402
 from visualisation import allocation_chart, correlation_heatmap, efficient_frontier_chart, line_chart  # noqa: E402
 
 st.set_page_config(page_title="Institutional Portfolio Optimizer", layout="wide")
@@ -47,8 +48,8 @@ def simulate_allocations(returns: pd.DataFrame, risk_free_rate: float):
 
 
 @st.cache_data(show_spinner=False)
-def run_research(returns: pd.DataFrame, lookback: int, rebalance_every: int, cap: float, cost: float, risk_free_rate: float, confidence: float):
-    return walk_forward_study(returns, lookback, rebalance_every, cap, cost, risk_free_rate, confidence)
+def run_research(returns: pd.DataFrame, lookback: int, rebalance_every: int, cap: float, cost: float, risk_free_rate: float, confidence: float, extended: bool = True, trigger: float = 1.25, defensive: float = .5):
+    return walk_forward_study(returns, lookback, rebalance_every, cap, cost, risk_free_rate, confidence, extended, trigger, defensive)
 
 
 def fmt_pct(value: float) -> str:
@@ -141,7 +142,7 @@ for col, (label, value) in zip(st.columns(7), kpis):
     col.metric(label, value)
 st.caption("Higher risk does not guarantee higher realised return. These are sample estimates, not forecasts.")
 
-tab1, tab2, tab3, tab4, research_tab, tab5, tab6 = st.tabs(["Performance", "Risk", "Diversification", "Optimisation", "Research lab", "Learning guide", "Data"])
+tab1, tab2, tab3, tab4, research_tab, stress_tab, tab5, tab6 = st.tabs(["Performance", "Risk", "Diversification", "Optimisation", "Research lab", "Stress lab", "Learning guide", "Data"])
 with tab1:
     left, right = st.columns(2)
     comparison = metrics["benchmark_comparison"]
@@ -211,8 +212,8 @@ with tab4:
     st.warning("Optimised weights use the full displayed sample and are evaluated on that same sample. This is in-sample research, not an out-of-sample trading backtest.")
 
 with research_tab:
-    st.subheader("Does a concentration cap improve out-of-sample risk after costs?")
-    st.write("Compare equal weight, minimum volatility and capped minimum volatility. Each rebalance learns from earlier observations and is scored on later returns. Holdings drift between rebalances.")
+    st.subheader("Which allocation rules remain useful after trading costs?")
+    st.write("Compare concentration constraints, covariance shrinkage, risk parity and a trailing-volatility exposure rule. A static defensive allocation helps distinguish adaptation from simply holding more cash. Every decision uses earlier observations.")
     if provenance.get("synthetic"):
         st.warning("This is a synthetic demonstration of the experiment, not empirical evidence about financial markets.")
     with st.form("research_settings"):
@@ -222,13 +223,17 @@ with research_tab:
         minimum_cap = 100.0 / len(returns.columns)
         cap = controls[2].number_input("Maximum target weight (%)", min_value=minimum_cap, max_value=100.0, value=max(35.0, minimum_cap), step=1.0) / 100
         cost = controls[3].number_input("Cost per traded notional (bps)", min_value=0.0, max_value=100.0, value=10.0, step=1.0)
+        extended = st.checkbox("Compare shrinkage and adaptive allocations", value=True)
+        extra = st.columns(2)
+        trigger = extra[0].number_input("Short/long volatility trigger", min_value=.5, max_value=3.0, value=1.25, step=.05)
+        defensive = extra[1].number_input("Risky allocation in defensive state (%)", min_value=0.0, max_value=100.0, value=50.0, step=5.0) / 100
         submitted = st.form_submit_button("Run walk-forward study")
-    st.caption("Choose the specification before examining test results. Changing parameters after seeing results is exploratory tuning and consumes the holdout. The cap applies at rebalancing, not continuously as prices drift.")
-    signature = (hashlib.sha256(returns.to_csv().encode()).hexdigest(), lookback, rebalance_every, cap, cost, risk_free_rate, confidence, provenance.get("source"))
+    st.caption("Adaptive exposure compares the prior 21-observation equal-weight volatility with the full prior training window. The extra covariance estimator is Ledoit–Wolf shrinkage. Choose the specification before examining test results. Changing parameters after seeing results is exploratory tuning and consumes the holdout. The cap applies at rebalancing, not continuously as prices drift.")
+    signature = (hashlib.sha256(returns.to_csv().encode()).hexdigest(), lookback, rebalance_every, cap, cost, risk_free_rate, confidence, provenance.get("source"), extended, trigger, defensive)
     if submitted:
         try:
             with st.spinner("Evaluating chronological holdout periods…"):
-                study = run_research(returns, lookback, rebalance_every, cap, cost, risk_free_rate, confidence)
+                study = run_research(returns, lookback, rebalance_every, cap, cost, risk_free_rate, confidence, extended, trigger, defensive)
             st.session_state["research_run"] = {"signature": signature, "result": study}
         except ValueError as exc:
             st.error(str(exc))
@@ -237,7 +242,7 @@ with research_tab:
         study = saved_study["result"]
         summary = study["summary"]
         dates = study["net_returns"].index
-        st.caption(f"Out-of-sample period: {dates[0]:%d %b %Y}–{dates[-1]:%d %b %Y} · {len(dates)} observations · {len(study['trades']) // 3} allocation decisions per strategy.")
+        st.caption(f"Out-of-sample period: {dates[0]:%d %b %Y}–{dates[-1]:%d %b %Y} · {len(dates)} observations · {len(study['trades']) // len(summary)} allocation decisions per strategy.")
         if len(dates) < 252:
             st.warning("Less than one trading year of holdout observations. Treat results and uncertainty intervals as exploratory.")
         chart = study["growth"].rename_axis("Date").reset_index().melt("Date", var_name="Strategy", value_name="Value")
@@ -246,7 +251,7 @@ with research_tab:
         formats = {column: "{:.2%}" for column in display if column != "Net Sharpe"}
         formats["Net Sharpe"] = "{:.2f}"
         st.dataframe(display.style.format(formats, na_rep="N/A"), width="stretch")
-        st.caption("Trading volume counts buys plus sells, including initial deployment from cash. Cost is a proportional approximation: cost rate × absolute weight changes, applied before the next return. There are no taxes, market impact, borrow costs or execution delays.")
+        st.caption("Research cash earns the assumed risk-free rate and drifts with holdings. Trading volume counts risky-asset buys plus sells, including initial deployment from cash. Cost is a proportional approximation: cost rate × absolute weight changes, applied before the next return. There are no taxes, market impact, borrow costs or execution delays.")
         st.write("**Return trade-off and uncertainty versus equal weight**")
         intervals = summary[["annual_mean_excess_vs_equal", "mean_excess_ci_low", "mean_excess_ci_high"]].rename(columns={"annual_mean_excess_vs_equal": "Annual mean return difference", "mean_excess_ci_low": "Exploratory 95% interval lower", "mean_excess_ci_high": "Exploratory 95% interval upper"})
         st.dataframe(intervals.style.format("{:+.2%}", na_rep="N/A"), width="stretch")
@@ -269,6 +274,34 @@ with research_tab:
         st.download_button("Download reproducible research bundle", archive.getvalue(), "portfolio-research-study.zip", "application/zip")
     else:
         st.info("Run the study to see results for the current inputs. Research results are kept separate from the in-sample dashboard.")
+
+
+with stress_tab:
+    st.subheader("Bond, equity, currency and inflation scenarios")
+    st.caption("Classify exposures and supply modified durations. Asset classes and economic currency exposures are user assumptions; they are not inferred from ticker names. The current portfolio weights are retained.")
+    exposures = pd.DataFrame({"asset": weights.index, "weight": weights.values,
+                              "asset_class": "Other", "currency": "USD", "modified_duration": 0.0})
+    exposures = st.data_editor(exposures, hide_index=True, disabled=["asset", "weight"],
+        column_config={"asset_class": st.column_config.SelectboxColumn(options=["Equity", "Bond", "Cash", "Other"], required=True),
+                       "modified_duration": st.column_config.NumberColumn(min_value=0.0, max_value=50.0)})
+    shock_cols = st.columns(3)
+    equity_shock = shock_cols[0].number_input("Equity price shock (%)", -95.0, 100.0, -20.0, 1.0) / 100
+    yield_shift = shock_cols[1].number_input("Parallel bond yield shift (bps)", -500.0, 1000.0, 200.0, 25.0)
+    fx_shock = shock_cols[2].number_input("Non-USD currency move versus USD (%)", -95.0, 100.0, -10.0, 1.0) / 100
+    inflation = st.number_input("One-year inflation assumption (%)", -20.0, 100.0, 3.0, .5) / 100
+    other_shock = st.number_input("Other assets: price shock (%)", -95.0, 100.0, -10.0, 1.0) / 100
+    try:
+        scenario = stress_portfolio(exposures, equity_shock, yield_shift,
+            {str(c): (0.0 if c == "USD" else fx_shock) for c in exposures.currency.unique()},
+            inflation, initial_value, other_shock)
+        columns = st.columns(2)
+        columns[0].metric("Scenario nominal return", fmt_pct(scenario["nominal_return"]))
+        columns[1].metric("Scenario purchasing-power return", fmt_pct(scenario["real_return"]))
+        st.dataframe(scenario["assets"], hide_index=True)
+        st.caption(scenario["limitations"])
+        st.download_button("Download scenario assumptions and results", json.dumps({**scenario, "assets": scenario["assets"].to_dict(orient="records")}, indent=2), "portfolio-stress.json", "application/json")
+    except (ValueError, TypeError) as exc:
+        st.error(str(exc))
 
 with tab5:
     st.subheader("Apply the finance behind the dashboard")

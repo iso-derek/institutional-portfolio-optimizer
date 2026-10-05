@@ -5,3 +5,4 @@ yfinance
 streamlit
 plotly
 python-dateutil
+scikit-learn>=1.4
