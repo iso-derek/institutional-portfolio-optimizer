@@ -28,6 +28,6 @@ def efficient_frontier_chart(frontier: pd.DataFrame):
         x="expected_volatility",
         y="expected_return",
         color="expected_sharpe",
-        title="Monte Carlo Efficient Frontier",
-        labels={"expected_volatility": "Expected Volatility", "expected_return": "Expected Return"},
+        title="Simulated Long-Only Allocations",
+        labels={"expected_volatility": "Sample Annualised Volatility", "expected_return": "Historical Mean Annual Return", "expected_sharpe": "Sample Sharpe"},
     )

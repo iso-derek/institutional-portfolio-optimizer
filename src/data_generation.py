@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 from pathlib import Path
+import json
 
 import numpy as np
 import pandas as pd
@@ -17,7 +18,7 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RAW_DIR = PROJECT_ROOT / "data" / "raw"
 RAW_PRICE_PATH = RAW_DIR / "asset_prices.csv"
-DEFAULT_TICKERS = ["AAPL", "MSFT", "AMZN", "JPM", "GS", "BLK", "SPY"]
+DEFAULT_TICKERS = ["AAPL", "MSFT", "AMZN", "JPM", "GS", "BLK"]
 
 
 def parse_tickers(tickers: str | list[str] | None = None) -> list[str]:
@@ -26,7 +27,7 @@ def parse_tickers(tickers: str | list[str] | None = None) -> list[str]:
     if isinstance(tickers, str):
         tickers = tickers.replace(",", " ").split()
     cleaned = [ticker.strip().upper() for ticker in tickers if ticker.strip()]
-    return cleaned or DEFAULT_TICKERS
+    return list(dict.fromkeys(cleaned)) or DEFAULT_TICKERS.copy()
 
 
 def generate_synthetic_prices(
@@ -58,13 +59,15 @@ def fetch_price_data(
     tickers: str | list[str] | None = None,
     start: str | date | None = None,
     end: str | date | None = None,
-    save_path: Path = RAW_PRICE_PATH,
+    save_path: Path | None = RAW_PRICE_PATH,
 ) -> pd.DataFrame:
     """Fetch adjusted close prices and save them to CSV."""
     ticker_list = parse_tickers(tickers)
     end = end or date.today()
     start = start or (pd.to_datetime(end).date() - timedelta(days=365 * 5))
-    save_path.parent.mkdir(parents=True, exist_ok=True)
+    if save_path is not None:
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+    metadata = {"source": "yfinance", "synthetic": False, "price_basis": "adjusted close", "requested_tickers": ticker_list}
 
     try:
         import yfinance as yf
@@ -81,27 +84,38 @@ def fetch_price_data(
         if downloaded.empty:
             raise ValueError("No rows returned by yfinance.")
         if isinstance(downloaded.columns, pd.MultiIndex):
-            prices = downloaded["Adj Close"] if "Adj Close" in downloaded.columns.get_level_values(0) else downloaded["Close"]
+            if "Adj Close" not in downloaded.columns.get_level_values(0):
+                raise ValueError("Adjusted close data is unavailable; refusing to silently use unadjusted close.")
+            prices = downloaded["Adj Close"]
         else:
-            column = "Adj Close" if "Adj Close" in downloaded.columns else "Close"
-            prices = downloaded[[column]].rename(columns={column: ticker_list[0]})
-        prices = prices.dropna(axis=1, how="all").ffill().dropna()
+            if "Adj Close" not in downloaded.columns:
+                raise ValueError("Adjusted close data is unavailable.")
+            prices = downloaded[["Adj Close"]].rename(columns={"Adj Close": ticker_list[0]})
+        prices = prices.dropna(axis=1, how="all")
         if prices.empty:
             raise ValueError("No valid price columns after cleaning.")
     except Exception as exc:
         print(f"Warning: using synthetic prices because market data download failed: {exc}")
         prices = generate_synthetic_prices(ticker_list, start=start, end=end)
+        metadata.update({"source": "synthetic", "synthetic": True, "price_basis": "fictional prices", "fallback_reason": str(exc)})
 
     prices.index = pd.to_datetime(prices.index)
     prices.index.name = "Date"
-    prices.to_csv(save_path)
+    metadata["unavailable_tickers"] = [ticker for ticker in ticker_list if ticker not in prices.columns]
+    prices.attrs.update(metadata)
+    if save_path is not None:
+        prices.to_csv(save_path)
+        save_path.with_suffix(".metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     return prices
 
 
 def load_price_data(path: Path = RAW_PRICE_PATH) -> pd.DataFrame:
     if not path.exists():
         return fetch_price_data(save_path=path)
-    return pd.read_csv(path, index_col="Date", parse_dates=True)
+    prices = pd.read_csv(path, index_col="Date", parse_dates=True)
+    metadata_path = path.with_suffix(".metadata.json")
+    prices.attrs.update(json.loads(metadata_path.read_text(encoding="utf-8")) if metadata_path.exists() else {"source": "unknown", "price_basis": "unverified", "synthetic": None})
+    return prices
 
 
 if __name__ == "__main__":
