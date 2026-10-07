@@ -218,3 +218,6 @@ python scripts/run_research.py --live   # requires complete real adjusted prices
 ```
 
 See the [extended protocol](docs/RESEARCH_PROTOCOL.md) and [recorded results](docs/RESEARCH_RESULTS.md). The recorded experiment is synthetic because the real-price provider was rate-limited; it is not evidence of investment outperformance.
+# One-command local launch
+
+On Windows with Python 3.13, double-click `Start.cmd`, or run `py -3.13 launch.py` in this folder. Python 3.12 is also supported. See [quick start and research history](docs/QUICKSTART.md).
