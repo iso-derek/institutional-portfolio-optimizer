@@ -1,7 +1,7 @@
 # Development status
 
 **Updated:** 5 November 2026  
-**Phase:** Project A, milestone A1 — ready for draft-PR review
+**Phase:** Project A, milestone A2 — provenance-locked real-data study
 
 ## Completed and present on this development branch
 
@@ -13,26 +13,30 @@
 - Dashboard launches with a responsive deterministic demonstration; live provider access is an explicit mode.
 - Focused regression fixtures cover invalid solver output, a known two-asset frontier solution, equal-return degeneracy and removed-row transitions.
 - Desktop visual verification confirms the default demonstration mode, disclosure banner and solved-frontier presentation render correctly.
+- Live SPY/IEF/GLD adjusted-price study completed from 2,011 observations spanning 2 January 2018 through 31 December 2025.
+- Frozen-input sidecar records the exact SHA-256, acquisition request, source, date coverage, limitations and provider-usage links.
+- Live acquisition fails closed; replay rejects missing, changed or synthetic inputs and reproduces from the exact frozen bytes.
 
 ## In progress
 
-- Draft-PR review and CI validation for this milestone.
+- Milestone A2 test, documentation and draft-PR review.
 
 ## Tests
 
 - Historical draft-PR CI: 34 tests passed on the inspected compatibility run; this is prior evidence, not a result from this branch.
-- Current branch local result: 38 tests passed in 41.010 seconds on Python 3.12 with the tested direct dependency set; `pip check` reported no broken requirements.
+- Current branch local result: 42 tests passed in 21.806 seconds on Python 3.12 with the tested direct dependency set; compilation passed and `pip check` reported no broken requirements.
 
 ## Known issues and blockers
 
-- The recorded market experiment remains synthetic because the earlier live provider request was rate-limited.
-- Real screenshots, a locked real-data study and deployment acceptance remain outstanding.
+- Provider data is retained locally but not committed because redistribution rights have not been established.
+- The real-data run recorded two disclosed shrinkage-risk-parity optimiser fallbacks.
+- Real screenshots and deployment acceptance remain outstanding.
 
 ## Next three priorities
 
-1. Reproduce a provenance-recorded real-data walk-forward study with a frozen input artifact and honest provider/licensing notes.
-2. Add alpha, rolling risk metrics and reconciled return attribution before the documentation/UI acceptance milestone.
-3. Capture genuine screenshots after the analytical surface is stable, then complete responsive and accessibility acceptance.
+1. Add alpha, rolling risk metrics and reconciled return attribution before the documentation/UI acceptance milestone.
+2. Capture genuine screenshots after the analytical surface is stable, then complete responsive and accessibility acceptance.
+3. Rehearse a clean install and complete security/dependency review before deployment acceptance.
 
 ## Remaining before a stable release
 

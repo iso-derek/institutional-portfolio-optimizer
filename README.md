@@ -221,9 +221,10 @@ The Research tab now offers seven walk-forward allocation rules: the original th
 ```bash
 python scripts/run_research.py          # explicitly synthetic reproducible study
 python scripts/run_research.py --live   # requires complete real adjusted prices
+python scripts/run_research.py --input outputs/study_prices.csv  # hash-verified replay
 ```
 
-See the [extended protocol](docs/RESEARCH_PROTOCOL.md) and [recorded results](docs/RESEARCH_RESULTS.md). The recorded experiment is synthetic because the real-price provider was rate-limited; it is not evidence of investment outperformance.
+See the [extended protocol](docs/RESEARCH_PROTOCOL.md) and [recorded results](docs/RESEARCH_RESULTS.md). A real-data run is now recorded by its frozen-input hash, but the provider data itself is not committed because redistribution rights are not established. The yfinance documentation describes the tool as research/educational and directs users to Yahoo's terms; verify current rights before publishing or commercial use.
 # One-command local launch
 
 On Windows with Python 3.13, double-click `Start.cmd`, or run `py -3.13 launch.py` in this folder. Python 3.12 is also supported. See [quick start and research history](docs/QUICKSTART.md).

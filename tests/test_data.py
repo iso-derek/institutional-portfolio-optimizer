@@ -36,6 +36,14 @@ class DataTests(unittest.TestCase):
         self.assertEqual(result.attrs["source"], "synthetic")
         self.assertIn("Offline test", result.attrs["fallback_reason"])
 
+    def test_live_download_can_fail_closed_without_synthetic_substitution(self):
+        def fail(*args, **kwargs):
+            raise ConnectionError("offline")
+        with patch.dict(sys.modules, {"yfinance": SimpleNamespace(download=fail)}):
+            with self.assertRaisesRegex(RuntimeError, "synthetic substitution is disabled"):
+                fetch_price_data(["AAPL"], "2026-01-01", "2026-03-01", save_path=None,
+                                 allow_synthetic_fallback=False)
+
     def test_unadjusted_prices_are_not_silently_substituted(self):
         frame = pd.DataFrame({"Close": [100., 101.]})
         with patch.dict(sys.modules, {"yfinance": SimpleNamespace(download=lambda *a, **k: frame)}):
