@@ -172,17 +172,19 @@ trade records, settings, a dataset hash and results. Read the
 The first deliverable is an auditable experiment, not a claim of new academic
 novelty or superior performance. Synthetic runs demonstrate mechanics only.
 
-## Dashboard Screenshots
+## Dashboard screenshots
 
-Verified screenshots will be added after the application passes visual acceptance.
+The default deterministic demonstration has passed desktop and mobile visual
+acceptance. These images are generated from the running application, not mockups.
 
-Suggested screenshots:
+![Desktop dashboard showing inputs, disclosure and executive portfolio metrics](screenshots/dashboard-desktop.png)
 
-- Executive summary
-- Allocation chart
-- Correlation heatmap
-- Efficient frontier
-- Drawdown chart
+![Mobile dashboard showing the responsive disclosure and executive metrics](screenshots/dashboard-mobile.png)
+
+Reproduce both images with `node scripts/capture_screenshots.js` while the app
+is running locally and headless Chrome is listening on port 9222. The detailed
+acceptance matrix and limitations are recorded in
+[docs/VISUAL_ACCEPTANCE.md](docs/VISUAL_ACCEPTANCE.md).
 
 ## Results / Insights
 
