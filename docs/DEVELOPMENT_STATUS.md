@@ -1,7 +1,7 @@
 # Development status
 
 **Updated:** 5 November 2026  
-**Phase:** Project A, milestone A2 — provenance-locked real-data study
+**Phase:** Project A, milestone A3 — benchmark diagnostics and reconciled attribution
 
 ## Completed and present on this development branch
 
@@ -16,15 +16,18 @@
 - Live SPY/IEF/GLD adjusted-price study completed from 2,011 observations spanning 2 January 2018 through 31 December 2025.
 - Frozen-input sidecar records the exact SHA-256, acquisition request, source, date coverage, limitations and provider-usage links.
 - Live acquisition fails closed; replay rejects missing, changed or synthetic inputs and reproduces from the exact frozen bytes.
+- Benchmark comparison now includes aligned Jensen-style alpha and information ratio alongside beta and tracking error.
+- Rolling 63-observation portfolio/benchmark volatility, beta, tracking error and maximum drawdown are visible in the Performance tab.
+- Asset wealth-change attribution reconciles exactly to compounded portfolio return under the disclosed fixed-weight daily-rebalancing assumption.
 
 ## In progress
 
-- Milestone A2 test, documentation and draft-PR review.
+- Milestone A3 draft-PR review and CI confirmation.
 
 ## Tests
 
 - Historical draft-PR CI: 34 tests passed on the inspected compatibility run; this is prior evidence, not a result from this branch.
-- Current branch local result: 42 tests passed in 21.806 seconds on Python 3.12 with the tested direct dependency set; compilation passed and `pip check` reported no broken requirements.
+- Current branch local result: 45 tests passed in 34.650 seconds on Python 3.12 with the tested direct dependency set; compilation passed, `pip check` reported no broken requirements, and the default dashboard was visually verified with benchmark alpha, rolling risk and reconciled attribution rendered correctly.
 
 ## Known issues and blockers
 
@@ -34,14 +37,13 @@
 
 ## Next three priorities
 
-1. Add alpha, rolling risk metrics and reconciled return attribution before the documentation/UI acceptance milestone.
-2. Capture genuine screenshots after the analytical surface is stable, then complete responsive and accessibility acceptance.
-3. Rehearse a clean install and complete security/dependency review before deployment acceptance.
+1. Capture genuine screenshots now that the core analytical surface is stable, then complete responsive and accessibility acceptance.
+2. Rehearse a clean install and complete security/dependency review before deployment acceptance.
+3. Design a confirmatory point-in-time universe and unseen holdout before making empirical performance claims.
 
 ## Remaining before a stable release
 
 - Verified real-data research and confirmatory holdout design.
-- Rolling/benchmark metrics and return attribution.
 - Full README architecture/mathematics/usage/deployment sections, genuine screenshots and visual/accessibility review.
 - Clean-install rehearsal, security/dependency review and user acceptance.
 - Review and approval before merging to `main`; deployment requires separate approval.

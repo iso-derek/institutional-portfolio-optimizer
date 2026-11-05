@@ -19,7 +19,9 @@ Investment teams need to understand the relationship between asset allocation, e
 - Daily returns and cumulative returns
 - Annualised return and volatility
 - Sharpe Ratio and Sortino Ratio
-- Separately selected benchmark, aligned performance comparison, beta and tracking error
+- Separately selected benchmark with aligned beta, Jensen-style alpha, tracking error and information ratio
+- Rolling 63-observation volatility, beta, tracking-error and maximum-drawdown diagnostics
+- Asset return attribution that reconciles to compounded portfolio return
 - Maximum drawdown
 - Historical VaR, parametric VaR, and CVaR
 - Capital allocation versus risk contribution by asset
@@ -66,6 +68,7 @@ institutional-portfolio-optimizer/
     preprocessing.py
     modelling.py
     analytics.py
+    research_artifacts.py
     visualisation.py
     research.py
   tests/
@@ -73,6 +76,7 @@ institutional-portfolio-optimizer/
     test_data.py
     test_app.py
     test_research.py
+    test_research_artifacts.py
   docs/
     COURSE_APPLICATIONS.md
     RESEARCH_PROTOCOL.md
@@ -86,10 +90,11 @@ institutional-portfolio-optimizer/
 
 1. Download or generate historical price data.
 2. Clean prices and calculate daily returns.
-3. Calculate portfolio-level performance and risk metrics.
-4. Solve the minimum-variance frontier across feasible target returns and show random allocations for context.
-5. Optimise allocations for maximum Sharpe Ratio and minimum volatility, rejecting numerically invalid solver output.
-6. Visualise allocation, risk, drawdown, correlation, and frontier results in Streamlit.
+3. Calculate portfolio performance, risk, benchmark alpha/beta and rolling diagnostics on aligned observations.
+4. Reconcile fixed-weight asset wealth changes to compounded portfolio total return.
+5. Solve the minimum-variance frontier across feasible target returns and show random allocations for context.
+6. Optimise allocations for maximum Sharpe Ratio and minimum volatility, rejecting numerically invalid solver output.
+7. Visualise allocation, risk, attribution, drawdown, correlation, and frontier results in Streamlit.
 
 ## How To Run
 

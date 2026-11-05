@@ -162,11 +162,13 @@ kpis = [
     ("Sharpe ratio", fmt_num(metrics["sharpe_ratio"])),
     ("Sortino ratio", fmt_num(metrics["sortino_ratio"])),
     ("Beta vs benchmark", fmt_num(metrics["beta"])),
+    ("Alpha vs benchmark", fmt_pct(metrics["benchmark_comparison"].get("alpha", np.nan))),
     ("Maximum drawdown", fmt_pct(metrics["max_drawdown"])),
     (f"1-day CVaR ({confidence:.1%})", fmt_pct(metrics["conditional_var"])),
 ]
-for col, (label, value) in zip(st.columns(7), kpis):
-    col.metric(label, value)
+with st.container(horizontal=True):
+    for label, value in kpis:
+        st.metric(label, value, border=True)
 st.caption("Higher risk does not guarantee higher realised return. These are sample estimates, not forecasts.")
 
 tab1, tab2, tab3, tab4, research_tab, stress_tab, tab5, tab6 = st.tabs(["Performance", "Risk", "Diversification", "Optimisation", "Research lab", "Stress lab", "Learning guide", "Data"])
@@ -176,17 +178,81 @@ with tab1:
     if comparison:
         growth = comparison["growth"].rename(columns={"Benchmark": benchmark})
         frame = growth.rename_axis("Date").reset_index().melt("Date", var_name="Series", value_name="Value")
-        left.plotly_chart(px.line(frame, x="Date", y="Value", color="Series", title="Growth of $100 — same dates"), width="stretch")
-        bench_cols = st.columns(3)
-        bench_cols[0].metric("Portfolio total return", fmt_pct(comparison["portfolio_total_return"]))
-        bench_cols[1].metric(f"{benchmark} total return", fmt_pct(comparison["benchmark_total_return"]))
-        bench_cols[2].metric("Annualised tracking error", fmt_pct(comparison["tracking_error"]))
-        st.caption("The benchmark is not automatically a holding. Tracking error measures volatility of daily portfolio-minus-benchmark returns.")
+        left.plotly_chart(
+            px.line(frame, x="Date", y="Value", color="Series", title="Growth of $100 — same dates"),
+            width="stretch",
+            alt="Portfolio and benchmark growth from the same starting value",
+        )
+        with st.container(horizontal=True):
+            st.metric("Portfolio total return", fmt_pct(comparison["portfolio_total_return"]), border=True)
+            st.metric(f"{benchmark} total return", fmt_pct(comparison["benchmark_total_return"]), border=True)
+            st.metric("Annualised tracking error", fmt_pct(comparison["tracking_error"]), border=True)
+            st.metric("Information ratio", fmt_num(comparison["information_ratio"]), border=True)
+            st.metric("Jensen-style alpha", fmt_pct(comparison["alpha"]), border=True)
+        st.caption("Alpha is the annualised arithmetic CAPM residual on aligned daily observations. Tracking error and the information ratio use daily portfolio-minus-benchmark returns. All are in-sample estimates.")
+
+        st.subheader("Rolling 63-observation risk")
+        rolling = comparison["rolling"].rename(columns={
+            "portfolio_volatility": "Portfolio volatility",
+            "benchmark_volatility": f"{benchmark} volatility",
+            "tracking_error": "Tracking error",
+            "beta": "Beta",
+            "maximum_drawdown": "Maximum drawdown",
+        })
+        roll_left, roll_right = st.columns(2)
+        roll_left.line_chart(
+            rolling[["Portfolio volatility", f"{benchmark} volatility", "Tracking error"]],
+            y_label="Annualised rate",
+            alt="Rolling portfolio volatility, benchmark volatility, and tracking error",
+        )
+        roll_right.line_chart(
+            rolling[["Beta"]],
+            y_label="Beta",
+            alt="Rolling portfolio beta versus the benchmark",
+        )
+        st.line_chart(
+            rolling[["Maximum drawdown"]],
+            y_label="Drawdown",
+            alt="Rolling portfolio maximum drawdown",
+        )
+        st.caption("Each point uses only the trailing 63 aligned observations. Rolling estimates are descriptive and can change sharply as observations enter or leave the window.")
     else:
         left.plotly_chart(line_chart(metrics["cumulative_returns"], "Portfolio Cumulative Return", "Cumulative Return"), width="stretch")
-    right.plotly_chart(allocation_chart(weights), width="stretch")
+    right.plotly_chart(allocation_chart(weights), width="stretch", alt="Current portfolio capital weights")
     frame = metrics["asset_cumulative_returns"].rename_axis("Date").reset_index().melt("Date", var_name="Asset", value_name="Cumulative Return")
-    st.plotly_chart(px.line(frame, x="Date", y="Cumulative Return", color="Asset", title="Asset Cumulative Returns"), width="stretch")
+    st.plotly_chart(
+        px.line(frame, x="Date", y="Cumulative Return", color="Asset", title="Asset Cumulative Returns"),
+        width="stretch",
+        alt="Cumulative sample return for each portfolio asset",
+    )
+
+    st.subheader("Reconciled return attribution")
+    attribution = metrics["return_attribution"]
+    attribution_table = attribution["by_asset"]
+    with st.container(horizontal=True):
+        st.metric("Compounded portfolio return", fmt_pct(attribution["portfolio_total_return"]), border=True)
+        st.metric("Attribution sum", fmt_pct(attribution_table["compounded_return_contribution"].sum()), border=True)
+        st.metric("Reconciliation residual", f"{attribution['reconciliation_residual']:.2e}", border=True)
+    st.bar_chart(
+        attribution_table,
+        x="asset",
+        y="compounded_return_contribution",
+        y_label="Contribution to total return",
+        alt="Asset contributions that sum to compounded portfolio return",
+    )
+    st.dataframe(
+        attribution_table,
+        hide_index=True,
+        width="stretch",
+        alt="Reconciled return attribution by asset",
+        column_config={
+            "asset": st.column_config.TextColumn("Asset", pinned=True),
+            "weight": st.column_config.NumberColumn("Fixed weight", format="percent"),
+            "arithmetic_return_contribution": st.column_config.NumberColumn("Arithmetic contribution", format="percent"),
+            "compounded_return_contribution": st.column_config.NumberColumn("Compounded contribution", format="percent"),
+        },
+    )
+    st.caption("Compounded contribution allocates each observation's portfolio wealth change to assets using the fixed weights in force before that return. Contributions reconcile to total return under daily rebalancing, with no costs or tax.")
 
 with tab2:
     loss_rows = pd.DataFrame([{"Measure": label, "Loss fraction": metrics[key], "USD equivalent": metrics[key] * initial_value}
@@ -365,12 +431,14 @@ Check the source, date window, missing assets and assumptions. Synthetic demonst
 - **VaR:** negative linearly interpolated return quantile at 1 − confidence.
 - **CVaR:** negative mean of observed returns at or below that quantile. Ties can change the tail count.
 - **Risk share:** weight_i × (covariance × weights)_i / portfolio variance.
+- **Alpha:** annualised mean daily CAPM residual using the aligned benchmark and compounded daily risk-free rate.
+- **Return attribution:** each asset receives its fixed-weight share of each observation's change in portfolio wealth; contributions sum to compounded total return.
 - **Undefined ratios:** N/A. No tax, trading costs, slippage or FX conversion is modelled.
 """)
 
 with tab6:
     st.write({"source": provenance.get("source", "unknown"), "price_basis": provenance.get("price_basis", "unverified"), "benchmark": benchmark or None, "portfolio_assets": list(returns.columns)})
-    st.dataframe(prices.tail(20), width="stretch")
+    st.dataframe(prices.tail(20), width="stretch", alt="Most recent aligned portfolio prices")
     record = {
         "source": provenance.get("source", "unknown"), "synthetic": provenance.get("synthetic"),
         "price_basis": provenance.get("price_basis", "unverified"),
@@ -380,6 +448,9 @@ with tab6:
         "confidence": confidence, "annual_risk_free_rate": risk_free_rate,
         "portfolio_value_usd": initial_value, "tail_observations": metrics["tail_observations"],
         **{k: metrics[k] for k in ["annualized_return", "annualized_volatility", "sharpe_ratio", "sortino_ratio", "max_drawdown", "historical_var", "conditional_var"]},
+        **({f"benchmark_{key}": comparison[key] for key in ["alpha", "beta", "tracking_error", "information_ratio"]}
+           if comparison else {}),
+        "return_attribution_residual": metrics["return_attribution"]["reconciliation_residual"],
         **{f"weight_{asset}": weight for asset, weight in weights.items()},
     }
     st.download_button("Download analysis summary (CSV)", pd.DataFrame([record]).to_csv(index=False).encode("utf-8"), "portfolio-analysis-summary.csv", "text/csv")
