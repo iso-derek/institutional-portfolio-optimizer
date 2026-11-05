@@ -20,8 +20,10 @@ if str(SRC_DIR) not in sys.path:
     sys.path.append(str(SRC_DIR))
 
 from analytics import portfolio_metrics  # noqa: E402
-from data_generation import DEFAULT_TICKERS, fetch_price_data  # noqa: E402
-from modelling import black_litterman_placeholder, maximum_sharpe_portfolio, minimum_volatility_portfolio, monte_carlo_simulation  # noqa: E402
+from data_generation import DEFAULT_TICKERS, fetch_price_data, generate_synthetic_prices  # noqa: E402
+from modelling import (black_litterman_placeholder, efficient_frontier,
+                       maximum_sharpe_portfolio, minimum_volatility_portfolio,
+                       monte_carlo_simulation)  # noqa: E402
 from preprocessing import calculate_returns, clean_prices, normalize_weights  # noqa: E402
 from research import walk_forward_study
 from stress import stress_portfolio  # noqa: E402
@@ -30,24 +32,40 @@ from visualisation import allocation_chart, correlation_heatmap, efficient_front
 st.set_page_config(page_title="Institutional Portfolio Optimizer", layout="wide")
 
 
-@st.cache_data(show_spinner=False, ttl=3600)
-def load_data(tickers: tuple[str, ...], start: date, end: date):
+@st.cache_data(show_spinner=False, ttl=3600, max_entries=20)
+def load_data(tickers: tuple[str, ...], start: date, end: date, data_mode: str):
     # Dashboard views must not overwrite the checked-in dataset.
+    if data_mode == "Deterministic demonstration":
+        prices = generate_synthetic_prices(list(tickers), start=start, end=end)
+        prices.attrs.update(
+            source="synthetic",
+            synthetic=True,
+            price_basis="fictional prices",
+            fallback_reason="User selected the deterministic demonstration dataset.",
+            requested_tickers=list(tickers),
+            unavailable_tickers=[],
+        )
+        return prices
     return fetch_price_data(list(tickers), start=start, end=end, save_path=None)
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, max_entries=20)
 def compare_allocations(returns: pd.DataFrame, risk_free_rate: float):
     return {"Maximum Sharpe": maximum_sharpe_portfolio(returns, risk_free_rate),
             "Minimum Volatility": minimum_volatility_portfolio(returns, risk_free_rate)}
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, max_entries=20)
 def simulate_allocations(returns: pd.DataFrame, risk_free_rate: float):
     return monte_carlo_simulation(returns, n_portfolios=2000, risk_free_rate=risk_free_rate)
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, max_entries=20)
+def solve_frontier(returns: pd.DataFrame, risk_free_rate: float):
+    return efficient_frontier(returns, n_points=30, risk_free_rate=risk_free_rate)
+
+
+@st.cache_data(show_spinner=False, max_entries=10)
 def run_research(returns: pd.DataFrame, lookback: int, rebalance_every: int, cap: float, cost: float, risk_free_rate: float, confidence: float, extended: bool = True, trigger: float = 1.25, defensive: float = .5):
     return walk_forward_study(returns, lookback, rebalance_every, cap, cost, risk_free_rate, confidence, extended, trigger, defensive)
 
@@ -65,6 +83,11 @@ st.caption("Portfolio construction, diversification and historical risk. Educati
 
 with st.sidebar:
     st.header("Portfolio Inputs")
+    data_mode = st.selectbox(
+        "Data mode",
+        ["Deterministic demonstration", "Yahoo Finance adjusted prices"],
+        help="The demonstration is reproducible and fictional. Yahoo Finance requires provider access and may be unavailable or rate-limited.",
+    )
     tickers_text = st.text_input("Portfolio tickers", ", ".join(DEFAULT_TICKERS))
     benchmark = st.text_input("Benchmark ticker", "SPY", help="Compared separately. Only invested in if also entered under portfolio tickers. Leave blank for no benchmark.").strip().upper()
     start_date = st.date_input("Start date", date.today() - timedelta(days=365 * 5))
@@ -88,10 +111,10 @@ if start_date >= end_date:
 
 requested = tuple(dict.fromkeys(tickers + ((benchmark,) if benchmark else ())))
 try:
-    raw_prices = load_data(requested, start_date, end_date)
+    raw_prices = load_data(requested, start_date, end_date, data_mode)
     provenance = raw_prices.attrs.copy()
+    all_returns = calculate_returns(raw_prices)
     prices = clean_prices(raw_prices)
-    all_returns = calculate_returns(prices)
     available = [ticker for ticker in tickers if ticker in all_returns]
     if not available:
         raise ValueError("None of the portfolio assets have enough aligned observations.")
@@ -102,8 +125,11 @@ except ValueError as exc:
     st.stop()
 
 if provenance.get("synthetic") is True:
-    st.warning("SYNTHETIC DEMONSTRATION: the market-data download failed. All prices and results below are simulated, not historical market performance.")
-    with st.expander("Why is synthetic data being used?"):
+    selected_demo = data_mode == "Deterministic demonstration"
+    reason = ("the user selected reproducible fictional data"
+              if selected_demo else "the market-data download failed")
+    st.warning(f"SYNTHETIC DEMONSTRATION: {reason}. All prices and results below are simulated, not historical market performance.")
+    with st.expander("About the demonstration data" if selected_demo else "Why is synthetic data being used?"):
         st.write(provenance.get("fallback_reason", "The provider did not supply usable adjusted prices."))
 else:
     st.info("Source: Yahoo Finance via yfinance · adjusted close prices. Confirm provider data before relying on the analysis.")
@@ -127,7 +153,8 @@ else:
     weights = normalize_weights(None, returns.columns)
 
 metrics = portfolio_metrics(returns, weights, risk_free_rate, benchmark=benchmark, benchmark_returns=benchmark_returns, confidence=confidence)
-frontier = simulate_allocations(returns, risk_free_rate)
+opportunities = simulate_allocations(returns, risk_free_rate)
+frontier = solve_frontier(returns, risk_free_rate)
 st.subheader("Executive Summary")
 kpis = [
     ("Historical CAGR", fmt_pct(metrics["annualized_return"])),
@@ -196,8 +223,12 @@ with tab3:
     st.warning("More stocks alone do not ensure diversification. Sector, country, currency and shared business drivers can leave a portfolio concentrated. This version does not yet classify those economic exposures.")
 
 with tab4:
-    st.plotly_chart(efficient_frontier_chart(frontier), width="stretch")
-    st.caption("Each point is a randomly sampled long-only allocation, not a solved efficient frontier.")
+    st.plotly_chart(
+        efficient_frontier_chart(frontier, opportunities),
+        width="stretch",
+        alt="Solved risk-return frontier with random feasible allocations shown for context",
+    )
+    st.caption("The line solves minimum variance at each feasible target return under long-only, fully invested constraints. Faint points are random feasible allocations. Every displayed frontier solution passed finite-weight, bound, full-investment and target-return residual checks.")
     rows = []
     candidates = {"Equal weight": normalize_weights(None, returns.columns), **{name: result["weights"] for name, result in optimised.items()}}
     for name, candidate in candidates.items():

@@ -23,8 +23,20 @@ def clean_prices(prices: pd.DataFrame) -> pd.DataFrame:
 
 
 def calculate_returns(prices: pd.DataFrame) -> pd.DataFrame:
-    """Calculate daily simple returns from cleaned price data."""
-    return clean_prices(prices).pct_change(fill_method=None).dropna()
+    """Calculate one-observation simple returns without bridging removed rows.
+
+    ``clean_prices`` can remove a date when a quote remains unavailable after
+    the bounded forward fill. A price change across that removed row spans more
+    than one source observation and must not be annualised as a one-observation
+    return. Weekends and market holidays remain valid because adjacency is
+    measured in the supplied price index, not in calendar days.
+    """
+    ordered = prices.sort_index()
+    cleaned = clean_prices(ordered)
+    source_position = pd.Series(np.arange(len(ordered)), index=ordered.index)
+    adjacent_source_rows = source_position.reindex(cleaned.index).diff().eq(1)
+    returns = cleaned.pct_change(fill_method=None)
+    return returns.loc[adjacent_source_rows].dropna()
 
 
 def normalize_weights(weights: dict[str, float] | pd.Series | None, assets: list[str] | pd.Index) -> pd.Series:
