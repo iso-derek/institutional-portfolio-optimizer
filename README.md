@@ -14,8 +14,8 @@ Investment teams need to understand the relationship between asset allocation, e
 
 ## Key Features
 
-- Fetches historical market data using `yfinance`
-- Offline synthetic fallback if live data is unavailable
+- Reproducible deterministic demonstration mode at launch, visibly labelled as fictional
+- Optional historical adjusted-price download using `yfinance`, with synthetic fallback if unavailable
 - Daily returns and cumulative returns
 - Annualised return and volatility
 - Sharpe Ratio and Sortino Ratio
@@ -26,7 +26,8 @@ Investment teams need to understand the relationship between asset allocation, e
 - Effective holdings, weight concentration and covariance-based diversification diagnostics
 - Correlation heatmap
 - Monte Carlo portfolio simulation
-- Random-allocation opportunity-set visualisation (not a solved efficient frontier)
+- Solved long-only efficient frontier with explicit numerical constraint checks
+- Random-allocation opportunity set shown separately for context
 - Minimum volatility portfolio
 - Maximum Sharpe Ratio portfolio
 - Clearly labelled historical-return tilt heuristic (not a Black-Litterman model)
@@ -86,8 +87,8 @@ institutional-portfolio-optimizer/
 1. Download or generate historical price data.
 2. Clean prices and calculate daily returns.
 3. Calculate portfolio-level performance and risk metrics.
-4. Simulate random portfolios to explore the sample risk-return opportunity set.
-5. Optimise allocations for maximum Sharpe Ratio and minimum volatility.
+4. Solve the minimum-variance frontier across feasible target returns and show random allocations for context.
+5. Optimise allocations for maximum Sharpe Ratio and minimum volatility, rejecting numerically invalid solver output.
 6. Visualise allocation, risk, drawdown, correlation, and frontier results in Streamlit.
 
 ## How To Run
@@ -103,6 +104,9 @@ price file. The optional data-generation command saves prices alongside
 `data/raw/asset_prices.metadata.json`, identifying whether the data is adjusted
 market data or a synthetic fallback. Older CSV files without a sidecar have
 unknown provenance and must not be assumed to contain genuine market observations.
+The dashboard starts in deterministic demonstration mode so a reviewer receives a
+responsive, reproducible walkthrough without depending on a third-party provider.
+Select `Yahoo Finance adjusted prices` in the sidebar to request market data.
 
 ## Applying Finance Learning
 
@@ -131,6 +135,8 @@ Important conventions:
 - Prices must have a common currency and calendar. The UI assumes USD and performs
   no FX conversion. At least 30 aligned prices are required. Missing quotes are
   forward-filled for at most three observations, then incomplete dates are dropped.
+  Returns that would bridge a removed source observation are excluded rather than
+  annualised as though they represented one observation.
 
 ## Validation
 
@@ -163,7 +169,7 @@ novelty or superior performance. Synthetic runs demonstrate mechanics only.
 
 ## Dashboard Screenshots
 
-Add screenshots to the `screenshots/` folder after running the app locally.
+Verified screenshots will be added after the application passes visual acceptance.
 
 Suggested screenshots:
 
@@ -199,7 +205,7 @@ The dashboard helps answer:
 - Factor exposure analysis
 - More realistic execution, market-impact and cost models beyond proportional fees
 - Sector, country, asset-class and currency exposure classification
-- BMC fixed-income duration/yield and FX stress scenarios
+- Deeper curve, credit-spread and cross-currency stress scenarios beyond the current first-order duration/FX lab
 - Point-in-time universe selection and a locked external holdout for confirmatory research
 - PDF report export
 
