@@ -11,8 +11,8 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from data_generation import fetch_price_data, load_price_data, parse_tickers
-from preprocessing import clean_prices
-from modelling import minimum_volatility_portfolio
+from preprocessing import calculate_returns, clean_prices
+from modelling import efficient_frontier, minimum_volatility_portfolio
 
 
 class DataTests(unittest.TestCase):
@@ -60,6 +60,14 @@ class DataTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unique"):
             clean_prices(pd.concat([prices, prices.tail(1)]))
 
+    def test_returns_do_not_bridge_a_removed_source_observation(self):
+        prices = pd.DataFrame({"A": np.arange(100., 150.)}, index=pd.bdate_range("2026-01-01", periods=50))
+        prices.iloc[10:14, 0] = np.nan
+        returns = calculate_returns(prices)
+        self.assertNotIn(prices.index[13], returns.index)
+        self.assertNotIn(prices.index[14], returns.index)
+        self.assertIn(prices.index[15], returns.index)
+
     def test_duplicate_symbols_deduplicate(self):
         self.assertEqual(parse_tickers("aapl, AAPL msft"), ["AAPL", "MSFT"])
 
@@ -70,6 +78,39 @@ class DataTests(unittest.TestCase):
         self.assertFalse(result["success"])
         self.assertIn("test failure", result["message"])
         np.testing.assert_allclose(result["weights"], [.5, .5])
+
+    def test_solver_success_with_invalid_weights_is_rejected(self):
+        returns = pd.DataFrame({"A": [.01, -.01, .02], "B": [.02, -.03, .01]})
+        invalid = SimpleNamespace(success=True, message="claimed success", x=np.array([-0.2, 1.2]), fun=0.1)
+        with patch("modelling.minimize", return_value=invalid):
+            result = minimum_volatility_portfolio(returns)
+        self.assertFalse(result["success"])
+        self.assertIn("solution rejected", result["message"])
+        np.testing.assert_allclose(result["weights"], [.5, .5])
+
+    def test_frontier_solves_known_two_asset_target_and_constraints(self):
+        returns = pd.DataFrame({
+            "A": np.array([-.02, -.01, .01, .02]) + .001,
+            "B": np.array([-.01, .02, -.02, .01]) + .002,
+        })
+        frontier = efficient_frontier(returns, n_points=3)
+        self.assertEqual(len(frontier), 3)
+        midpoint = frontier.iloc[(frontier.expected_return - .0015 * 252).abs().argmin()]
+        self.assertAlmostEqual(midpoint["weight_A"], .5, places=6)
+        self.assertAlmostEqual(midpoint["weight_B"], .5, places=6)
+        self.assertLess(frontier.max_constraint_residual.max(), 1e-7)
+        np.testing.assert_allclose(frontier[["weight_A", "weight_B"]].sum(axis=1), 1, atol=1e-7)
+
+    def test_frontier_collapses_cleanly_when_asset_means_are_equal(self):
+        returns = pd.DataFrame({
+            "A": [-.02, -.01, .01, .02],
+            "B": [-.01, .02, -.02, .01],
+        })
+        frontier = efficient_frontier(returns, n_points=5)
+        self.assertEqual(len(frontier), 1)
+        self.assertAlmostEqual(frontier.iloc[0]["expected_return"], 0.0, places=12)
+        self.assertLess(frontier.iloc[0]["max_constraint_residual"], 1e-7)
+        self.assertIn("reduces", frontier.iloc[0]["message"])
 
 
 if __name__ == "__main__":

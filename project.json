@@ -1,0 +1,6 @@
+{
+  "name": "Institutional Portfolio Optimizer",
+  "app": "app.py",
+  "port": 8501
+}
+

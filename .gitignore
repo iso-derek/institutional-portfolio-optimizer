@@ -11,3 +11,5 @@ screenshots/*.png
 .DS_Store
 
 outputs/
+/.venv/
+/runs/
