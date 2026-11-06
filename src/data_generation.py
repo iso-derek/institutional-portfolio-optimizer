@@ -7,7 +7,7 @@ repository remains runnable during demos and reviews.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 import json
 
@@ -60,6 +60,7 @@ def fetch_price_data(
     start: str | date | None = None,
     end: str | date | None = None,
     save_path: Path | None = RAW_PRICE_PATH,
+    allow_synthetic_fallback: bool = True,
 ) -> pd.DataFrame:
     """Fetch adjusted close prices and save them to CSV."""
     ticker_list = parse_tickers(tickers)
@@ -67,7 +68,22 @@ def fetch_price_data(
     start = start or (pd.to_datetime(end).date() - timedelta(days=365 * 5))
     if save_path is not None:
         save_path.parent.mkdir(parents=True, exist_ok=True)
-    metadata = {"source": "yfinance", "synthetic": False, "price_basis": "adjusted close", "requested_tickers": ticker_list}
+    metadata = {
+        "source": "yfinance",
+        "upstream_service": "Yahoo Finance",
+        "synthetic": False,
+        "price_basis": "adjusted close",
+        "requested_tickers": ticker_list,
+        "requested_start": str(pd.Timestamp(start).date()),
+        "requested_end_exclusive": str(pd.Timestamp(end).date()),
+        "retrieved_at_utc": datetime.now(timezone.utc).isoformat(),
+        "client_documentation": "https://ranaroussi.github.io/yfinance/",
+        "provider_terms": "https://legal.yahoo.com/index.html",
+        "usage_note": (
+            "yfinance states that it is intended for research and educational use and that Yahoo Finance data is for personal use. "
+            "Verify current provider terms and redistribution rights before publishing or commercial use."
+        ),
+    }
 
     try:
         import yfinance as yf
@@ -95,6 +111,8 @@ def fetch_price_data(
         if prices.empty:
             raise ValueError("No valid price columns after cleaning.")
     except Exception as exc:
+        if not allow_synthetic_fallback:
+            raise RuntimeError(f"Real adjusted-price download failed; synthetic substitution is disabled: {exc}") from exc
         print(f"Warning: using synthetic prices because market data download failed: {exc}")
         prices = generate_synthetic_prices(ticker_list, start=start, end=end)
         metadata.update({"source": "synthetic", "synthetic": True, "price_basis": "fictional prices", "fallback_reason": str(exc)})
