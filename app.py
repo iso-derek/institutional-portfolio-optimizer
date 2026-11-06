@@ -162,11 +162,13 @@ kpis = [
     ("Sharpe ratio", fmt_num(metrics["sharpe_ratio"])),
     ("Sortino ratio", fmt_num(metrics["sortino_ratio"])),
     ("Beta vs benchmark", fmt_num(metrics["beta"])),
+    ("Alpha vs benchmark", fmt_pct(metrics["benchmark_comparison"].get("alpha", np.nan))),
     ("Maximum drawdown", fmt_pct(metrics["max_drawdown"])),
     (f"1-day CVaR ({confidence:.1%})", fmt_pct(metrics["conditional_var"])),
 ]
-for col, (label, value) in zip(st.columns(7), kpis):
-    col.metric(label, value)
+with st.container(horizontal=True):
+    for label, value in kpis:
+        st.metric(label, value, border=True)
 st.caption("Higher risk does not guarantee higher realised return. These are sample estimates, not forecasts.")
 
 tab1, tab2, tab3, tab4, research_tab, stress_tab, tab5, tab6 = st.tabs(["Performance", "Risk", "Diversification", "Optimisation", "Research lab", "Stress lab", "Learning guide", "Data"])
@@ -176,29 +178,93 @@ with tab1:
     if comparison:
         growth = comparison["growth"].rename(columns={"Benchmark": benchmark})
         frame = growth.rename_axis("Date").reset_index().melt("Date", var_name="Series", value_name="Value")
-        left.plotly_chart(px.line(frame, x="Date", y="Value", color="Series", title="Growth of $100 — same dates"), width="stretch")
-        bench_cols = st.columns(3)
-        bench_cols[0].metric("Portfolio total return", fmt_pct(comparison["portfolio_total_return"]))
-        bench_cols[1].metric(f"{benchmark} total return", fmt_pct(comparison["benchmark_total_return"]))
-        bench_cols[2].metric("Annualised tracking error", fmt_pct(comparison["tracking_error"]))
-        st.caption("The benchmark is not automatically a holding. Tracking error measures volatility of daily portfolio-minus-benchmark returns.")
+        left.plotly_chart(
+            px.line(frame, x="Date", y="Value", color="Series", title="Growth of $100 — same dates"),
+            width="stretch",
+            alt="Portfolio and benchmark growth from the same starting value",
+        )
+        with st.container(horizontal=True):
+            st.metric("Portfolio total return", fmt_pct(comparison["portfolio_total_return"]), border=True)
+            st.metric(f"{benchmark} total return", fmt_pct(comparison["benchmark_total_return"]), border=True)
+            st.metric("Annualised tracking error", fmt_pct(comparison["tracking_error"]), border=True)
+            st.metric("Information ratio", fmt_num(comparison["information_ratio"]), border=True)
+            st.metric("Jensen-style alpha", fmt_pct(comparison["alpha"]), border=True)
+        st.caption("Alpha is the annualised arithmetic CAPM residual on aligned daily observations. Tracking error and the information ratio use daily portfolio-minus-benchmark returns. All are in-sample estimates.")
+
+        st.subheader("Rolling 63-observation risk")
+        rolling = comparison["rolling"].rename(columns={
+            "portfolio_volatility": "Portfolio volatility",
+            "benchmark_volatility": f"{benchmark} volatility",
+            "tracking_error": "Tracking error",
+            "beta": "Beta",
+            "maximum_drawdown": "Maximum drawdown",
+        })
+        roll_left, roll_right = st.columns(2)
+        roll_left.line_chart(
+            rolling[["Portfolio volatility", f"{benchmark} volatility", "Tracking error"]],
+            y_label="Annualised rate",
+            alt="Rolling portfolio volatility, benchmark volatility, and tracking error",
+        )
+        roll_right.line_chart(
+            rolling[["Beta"]],
+            y_label="Beta",
+            alt="Rolling portfolio beta versus the benchmark",
+        )
+        st.line_chart(
+            rolling[["Maximum drawdown"]],
+            y_label="Drawdown",
+            alt="Rolling portfolio maximum drawdown",
+        )
+        st.caption("Each point uses only the trailing 63 aligned observations. Rolling estimates are descriptive and can change sharply as observations enter or leave the window.")
     else:
-        left.plotly_chart(line_chart(metrics["cumulative_returns"], "Portfolio Cumulative Return", "Cumulative Return"), width="stretch")
-    right.plotly_chart(allocation_chart(weights), width="stretch")
+        left.plotly_chart(line_chart(metrics["cumulative_returns"], "Portfolio Cumulative Return", "Cumulative Return"), width="stretch", alt="Portfolio cumulative sample return")
+    right.plotly_chart(allocation_chart(weights), width="stretch", alt="Current portfolio capital weights")
     frame = metrics["asset_cumulative_returns"].rename_axis("Date").reset_index().melt("Date", var_name="Asset", value_name="Cumulative Return")
-    st.plotly_chart(px.line(frame, x="Date", y="Cumulative Return", color="Asset", title="Asset Cumulative Returns"), width="stretch")
+    st.plotly_chart(
+        px.line(frame, x="Date", y="Cumulative Return", color="Asset", title="Asset Cumulative Returns"),
+        width="stretch",
+        alt="Cumulative sample return for each portfolio asset",
+    )
+
+    st.subheader("Reconciled return attribution")
+    attribution = metrics["return_attribution"]
+    attribution_table = attribution["by_asset"]
+    with st.container(horizontal=True):
+        st.metric("Compounded portfolio return", fmt_pct(attribution["portfolio_total_return"]), border=True)
+        st.metric("Attribution sum", fmt_pct(attribution_table["compounded_return_contribution"].sum()), border=True)
+        st.metric("Reconciliation residual", f"{attribution['reconciliation_residual']:.2e}", border=True)
+    st.bar_chart(
+        attribution_table,
+        x="asset",
+        y="compounded_return_contribution",
+        y_label="Contribution to total return",
+        alt="Asset contributions that sum to compounded portfolio return",
+    )
+    st.dataframe(
+        attribution_table,
+        hide_index=True,
+        width="stretch",
+        alt="Reconciled return attribution by asset",
+        column_config={
+            "asset": st.column_config.TextColumn("Asset", pinned=True),
+            "weight": st.column_config.NumberColumn("Fixed weight", format="percent"),
+            "arithmetic_return_contribution": st.column_config.NumberColumn("Arithmetic contribution", format="percent"),
+            "compounded_return_contribution": st.column_config.NumberColumn("Compounded contribution", format="percent"),
+        },
+    )
+    st.caption("Compounded contribution allocates each observation's portfolio wealth change to assets using the fixed weights in force before that return. Contributions reconcile to total return under daily rebalancing, with no costs or tax.")
 
 with tab2:
     loss_rows = pd.DataFrame([{"Measure": label, "Loss fraction": metrics[key], "USD equivalent": metrics[key] * initial_value}
         for label, key in [("Historical VaR", "historical_var"), ("Normal-model VaR", "parametric_var"), ("Historical CVaR / Expected Shortfall", "conditional_var")]])
     st.write(f"**One-day loss estimates at {confidence:.1%} confidence**")
-    st.dataframe(loss_rows.style.format({"Loss fraction": "{:.2%}", "USD equivalent": "$"+"{:,.2f}"}), width="stretch", hide_index=True)
+    st.dataframe(loss_rows.style.format({"Loss fraction": "{:.2%}", "USD equivalent": "$"+"{:,.2f}"}), width="stretch", hide_index=True, alt="One-day portfolio loss estimates and dollar equivalents")
     st.caption(f"Positive values represent losses; negative values represent gains. VaR is a threshold, not a maximum loss. CVaR averages the {metrics['tail_observations']} sample returns at or below the historical quantile. Normal-model VaR assumes normally distributed returns.")
     if metrics["tail_observations"] < 20:
         st.warning("Fewer than 20 observations support this tail estimate. Treat it as statistically fragile, especially at high confidence.")
     left, right = st.columns(2)
-    left.plotly_chart(line_chart(metrics["drawdown"], "Portfolio Drawdown", "Drawdown"), width="stretch")
-    right.plotly_chart(correlation_heatmap(metrics["correlation"]), width="stretch")
+    left.plotly_chart(line_chart(metrics["drawdown"], "Portfolio Drawdown", "Drawdown"), width="stretch", alt="Portfolio drawdown through the selected sample")
+    right.plotly_chart(correlation_heatmap(metrics["correlation"]), width="stretch", alt="Pairwise correlation heatmap for portfolio assets")
     st.caption("Drawdown includes losses from the initial investment. Historical relationships can change during market stress.")
 
 with tab3:
@@ -212,8 +278,8 @@ with tab3:
     bars = allocation_risk[["asset", "weight", "risk_contribution"]].rename(columns={"weight": "Capital share", "risk_contribution": "Risk share"}).melt("asset", var_name="Measure", value_name="Share")
     fig = px.bar(bars, x="asset", y="Share", color="Measure", barmode="group", title="Share of capital versus share of portfolio variance")
     fig.update_yaxes(tickformat=".0%")
-    st.plotly_chart(fig, width="stretch")
-    st.dataframe(allocation_risk.style.format({"weight": "{:.2%}", "risk_contribution": "{:.2%}", "risk_minus_weight": "{:+.2%}"}), width="stretch", hide_index=True)
+    st.plotly_chart(fig, width="stretch", alt="Capital weights compared with portfolio variance contributions by asset")
+    st.dataframe(allocation_risk.style.format({"weight": "{:.2%}", "risk_contribution": "{:.2%}", "risk_minus_weight": "{:+.2%}"}), width="stretch", hide_index=True, alt="Capital allocation and risk contribution by asset")
     finite_risk = allocation_risk.dropna(subset=["risk_contribution"])
     if not finite_risk.empty:
         top = finite_risk.loc[finite_risk["risk_contribution"].idxmax()]
@@ -234,12 +300,12 @@ with tab4:
     for name, candidate in candidates.items():
         m = portfolio_metrics(returns, candidate, risk_free_rate, confidence=confidence)
         rows.append({"Allocation": name, "Historical CAGR": m["annualized_return"], "Annualised volatility": m["annualized_volatility"], "Sharpe": m["sharpe_ratio"], "Max drawdown": m["max_drawdown"]})
-    st.dataframe(pd.DataFrame(rows).style.format({"Historical CAGR": "{:.2%}", "Annualised volatility": "{:.2%}", "Sharpe": "{:.2f}", "Max drawdown": "{:.2%}"}), width="stretch", hide_index=True)
+    st.dataframe(pd.DataFrame(rows).style.format({"Historical CAGR": "{:.2%}", "Annualised volatility": "{:.2%}", "Sharpe": "{:.2f}", "Max drawdown": "{:.2%}"}), width="stretch", hide_index=True, alt="Historical risk and return comparison across allocation methods")
     for col, (name, result) in zip(st.columns(2), optimised.items()):
         col.write(f"**{name}**")
         if not result["success"]:
             col.warning("Optimisation failed; equal-weight fallback. " + result["message"])
-        col.dataframe(result["weights"].rename("weight").rename_axis("asset").reset_index().style.format({"weight": "{:.2%}"}), width="stretch", hide_index=True)
+        col.dataframe(result["weights"].rename("weight").rename_axis("asset").reset_index().style.format({"weight": "{:.2%}"}), width="stretch", hide_index=True, alt=f"{name} portfolio weights")
     st.warning("Optimised weights use the full displayed sample and are evaluated on that same sample. This is in-sample research, not an out-of-sample trading backtest.")
 
 with research_tab:
@@ -277,22 +343,22 @@ with research_tab:
         if len(dates) < 252:
             st.warning("Less than one trading year of holdout observations. Treat results and uncertainty intervals as exploratory.")
         chart = study["growth"].rename_axis("Date").reset_index().melt("Date", var_name="Strategy", value_name="Value")
-        st.plotly_chart(px.line(chart, x="Date", y="Value", color="Strategy", title="Out-of-sample growth of $100 after assumed costs"), width="stretch")
+        st.plotly_chart(px.line(chart, x="Date", y="Value", color="Strategy", title="Out-of-sample growth of $100 after assumed costs"), width="stretch", alt="Out-of-sample strategy wealth after assumed trading costs")
         display = summary[["gross_cagr", "net_cagr", "net_volatility", "net_sharpe", "max_drawdown", "one_day_cvar", "annual_traded_fraction", "mean_largest_target_weight"]].rename(columns={"gross_cagr": "Gross CAGR", "net_cagr": "Net CAGR", "net_volatility": "Net volatility", "net_sharpe": "Net Sharpe", "max_drawdown": "Max drawdown", "one_day_cvar": "1-day CVaR", "annual_traded_fraction": "Annual traded notional / wealth", "mean_largest_target_weight": "Mean largest target weight"})
         formats = {column: "{:.2%}" for column in display if column != "Net Sharpe"}
         formats["Net Sharpe"] = "{:.2f}"
-        st.dataframe(display.style.format(formats, na_rep="N/A"), width="stretch")
+        st.dataframe(display.style.format(formats, na_rep="N/A"), width="stretch", alt="Walk-forward strategy performance and trading summary")
         st.caption("Research cash earns the assumed risk-free rate and drifts with holdings. Trading volume counts risky-asset buys plus sells, including initial deployment from cash. Cost is a proportional approximation: cost rate × absolute weight changes, applied before the next return. There are no taxes, market impact, borrow costs or execution delays.")
         st.write("**Return trade-off and uncertainty versus equal weight**")
         intervals = summary[["annual_mean_excess_vs_equal", "mean_excess_ci_low", "mean_excess_ci_high"]].rename(columns={"annual_mean_excess_vs_equal": "Annual mean return difference", "mean_excess_ci_low": "Exploratory 95% interval lower", "mean_excess_ci_high": "Exploratory 95% interval upper"})
-        st.dataframe(intervals.style.format("{:+.2%}", na_rep="N/A"), width="stretch")
+        st.dataframe(intervals.style.format("{:+.2%}", na_rep="N/A"), width="stretch", alt="Exploratory return differences and bootstrap intervals versus equal weight")
         st.caption(f"Paired circular-block bootstrap: 500 draws, {rebalance_every}-observation blocks, seed 42. N/A when fewer than two blocks are available. Differences are annualised arithmetic mean returns, not CAGR differences. Intervals do not establish causality, account for repeated tuning or quantify uncertainty in CVaR/drawdown.")
         st.caption("The user-chosen universe and full-period data-availability filtering can introduce selection and survivorship bias. Research conclusions require a fixed study universe and verified historical data.")
         if study["failures"]:
             st.warning(f"{len(study['failures'])} optimisation fits failed and used equal weights. Inspect these before interpreting the experiment.")
-            st.dataframe(pd.DataFrame(study["failures"]), hide_index=True)
+            st.dataframe(pd.DataFrame(study["failures"]), hide_index=True, alt="Optimisation fits that used an equal-weight fallback")
         with st.expander("Audit the training dates and target allocations"):
-            st.dataframe(study["target_weights"], hide_index=True, width="stretch")
+            st.dataframe(study["target_weights"], hide_index=True, width="stretch", alt="Walk-forward training dates and target portfolio weights")
         metadata = {**study["settings"], "source": provenance, "portfolio_assets": list(returns.columns),
                     "dataset_sha256": signature[0], "test_start": str(dates[0]), "test_end": str(dates[-1]),
                     "assumptions": "Daily returns; 252 observations/year; target weights use strictly prior data; costs on buys plus sells incl. initial deployment; weights drift; chosen asset universe may create survivorship/selection bias."}
@@ -312,7 +378,7 @@ with stress_tab:
     st.caption("Classify exposures and supply modified durations. Asset classes and economic currency exposures are user assumptions; they are not inferred from ticker names. The current portfolio weights are retained.")
     exposures = pd.DataFrame({"asset": weights.index, "weight": weights.values,
                               "asset_class": "Other", "currency": "USD", "modified_duration": 0.0})
-    exposures = st.data_editor(exposures, hide_index=True, disabled=["asset", "weight"],
+    exposures = st.data_editor(exposures, hide_index=True, disabled=["asset", "weight"], alt="Editable asset classes currencies and duration assumptions",
         column_config={"asset_class": st.column_config.SelectboxColumn(options=["Equity", "Bond", "Cash", "Other"], required=True),
                        "modified_duration": st.column_config.NumberColumn(min_value=0.0, max_value=50.0)})
     shock_cols = st.columns(3)
@@ -328,7 +394,7 @@ with stress_tab:
         columns = st.columns(2)
         columns[0].metric("Scenario nominal return", fmt_pct(scenario["nominal_return"]))
         columns[1].metric("Scenario purchasing-power return", fmt_pct(scenario["real_return"]))
-        st.dataframe(scenario["assets"], hide_index=True)
+        st.dataframe(scenario["assets"], hide_index=True, alt="Asset-level stress scenario assumptions and results")
         st.caption(scenario["limitations"])
         st.download_button("Download scenario assumptions and results", json.dumps({**scenario, "assets": scenario["assets"].to_dict(orient="records")}, indent=2), "portfolio-stress.json", "application/json")
     except (ValueError, TypeError) as exc:
@@ -365,12 +431,14 @@ Check the source, date window, missing assets and assumptions. Synthetic demonst
 - **VaR:** negative linearly interpolated return quantile at 1 − confidence.
 - **CVaR:** negative mean of observed returns at or below that quantile. Ties can change the tail count.
 - **Risk share:** weight_i × (covariance × weights)_i / portfolio variance.
+- **Alpha:** annualised mean daily CAPM residual using the aligned benchmark and compounded daily risk-free rate.
+- **Return attribution:** each asset receives its fixed-weight share of each observation's change in portfolio wealth; contributions sum to compounded total return.
 - **Undefined ratios:** N/A. No tax, trading costs, slippage or FX conversion is modelled.
 """)
 
 with tab6:
     st.write({"source": provenance.get("source", "unknown"), "price_basis": provenance.get("price_basis", "unverified"), "benchmark": benchmark or None, "portfolio_assets": list(returns.columns)})
-    st.dataframe(prices.tail(20), width="stretch")
+    st.dataframe(prices.tail(20), width="stretch", alt="Most recent aligned portfolio prices")
     record = {
         "source": provenance.get("source", "unknown"), "synthetic": provenance.get("synthetic"),
         "price_basis": provenance.get("price_basis", "unverified"),
@@ -380,6 +448,9 @@ with tab6:
         "confidence": confidence, "annual_risk_free_rate": risk_free_rate,
         "portfolio_value_usd": initial_value, "tail_observations": metrics["tail_observations"],
         **{k: metrics[k] for k in ["annualized_return", "annualized_volatility", "sharpe_ratio", "sortino_ratio", "max_drawdown", "historical_var", "conditional_var"]},
+        **({f"benchmark_{key}": comparison[key] for key in ["alpha", "beta", "tracking_error", "information_ratio"]}
+           if comparison else {}),
+        "return_attribution_residual": metrics["return_attribution"]["reconciliation_residual"],
         **{f"weight_{asset}": weight for asset, weight in weights.items()},
     }
     st.download_button("Download analysis summary (CSV)", pd.DataFrame([record]).to_csv(index=False).encode("utf-8"), "portfolio-analysis-summary.csv", "text/csv")

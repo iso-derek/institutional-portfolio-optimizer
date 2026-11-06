@@ -78,6 +78,72 @@ def beta(asset_returns: pd.Series, benchmark_returns: pd.Series) -> float:
     return float(aligned.iloc[:, 0].cov(aligned.iloc[:, 1]) / aligned.iloc[:, 1].var())
 
 
+def jensen_alpha(
+    portfolio: pd.Series,
+    benchmark: pd.Series,
+    risk_free_rate: float = 0.02,
+) -> float:
+    """Annualised arithmetic CAPM residual on aligned daily observations."""
+    aligned = pd.concat([portfolio.rename("portfolio"), benchmark.rename("benchmark")], axis=1).dropna()
+    if len(aligned) < 2:
+        return np.nan
+    beta_value = beta(aligned["portfolio"], aligned["benchmark"])
+    if not np.isfinite(beta_value):
+        return np.nan
+    daily_rf = (1 + risk_free_rate) ** (1 / TRADING_DAYS) - 1
+    residual = ((aligned["portfolio"] - daily_rf)
+                - beta_value * (aligned["benchmark"] - daily_rf))
+    return float(residual.mean() * TRADING_DAYS)
+
+
+def rolling_benchmark_metrics(
+    portfolio: pd.Series,
+    benchmark: pd.Series,
+    window: int = 63,
+) -> pd.DataFrame:
+    """Rolling annualised risk and market-sensitivity diagnostics."""
+    if not isinstance(window, int) or window < 2:
+        raise ValueError("Rolling window must be an integer of at least two observations.")
+    aligned = pd.concat([portfolio.rename("portfolio"), benchmark.rename("benchmark")], axis=1).dropna()
+    active = aligned["portfolio"] - aligned["benchmark"]
+    benchmark_variance = aligned["benchmark"].rolling(window).var()
+    output = pd.DataFrame(index=aligned.index)
+    output["portfolio_volatility"] = aligned["portfolio"].rolling(window).std() * np.sqrt(TRADING_DAYS)
+    output["benchmark_volatility"] = aligned["benchmark"].rolling(window).std() * np.sqrt(TRADING_DAYS)
+    output["tracking_error"] = active.rolling(window).std() * np.sqrt(TRADING_DAYS)
+    output["beta"] = (aligned["portfolio"].rolling(window).cov(aligned["benchmark"])
+                      / benchmark_variance.replace(0, np.nan))
+    output["maximum_drawdown"] = aligned["portfolio"].rolling(window).apply(
+        lambda sample: max_drawdown(pd.Series(sample)), raw=False
+    )
+    return output.dropna(how="all")
+
+
+def return_attribution(returns: pd.DataFrame, weights: pd.Series) -> dict[str, object]:
+    """Reconcile asset wealth changes to compounded portfolio total return.
+
+    The identity follows the dashboard assumption of fixed weights rebalanced
+    each observation, with no costs or tax.
+    """
+    weights = normalize_weights(weights, returns.columns)
+    portfolio = portfolio_returns(returns, weights)
+    wealth_before = (1 + portfolio).cumprod().shift(1, fill_value=1.0)
+    daily_arithmetic = returns.mul(weights, axis=1)
+    wealth_contribution = daily_arithmetic.mul(wealth_before, axis=0).sum()
+    total_return = float((1 + portfolio).prod() - 1)
+    table = pd.DataFrame({
+        "asset": returns.columns,
+        "weight": weights.reindex(returns.columns).to_numpy(),
+        "arithmetic_return_contribution": daily_arithmetic.sum().to_numpy(),
+        "compounded_return_contribution": wealth_contribution.reindex(returns.columns).to_numpy(),
+    })
+    return {
+        "by_asset": table,
+        "portfolio_total_return": total_return,
+        "reconciliation_residual": float(total_return - table["compounded_return_contribution"].sum()),
+    }
+
+
 def risk_contribution(returns: pd.DataFrame, weights: pd.Series) -> pd.DataFrame:
     weights = normalize_weights(weights, returns.columns)
     cov = returns.cov() * TRADING_DAYS
@@ -121,7 +187,12 @@ def diversification_metrics(returns: pd.DataFrame, weights: pd.Series) -> dict[s
     }
 
 
-def benchmark_comparison(portfolio: pd.Series, benchmark: pd.Series | None) -> dict[str, object]:
+def benchmark_comparison(
+    portfolio: pd.Series,
+    benchmark: pd.Series | None,
+    risk_free_rate: float = 0.02,
+    rolling_window: int = 63,
+) -> dict[str, object]:
     """Compare the same dates; the benchmark is not added to the allocation."""
     if benchmark is None:
         return {}
@@ -137,6 +208,8 @@ def benchmark_comparison(portfolio: pd.Series, benchmark: pd.Series | None) -> d
         "tracking_error": tracking_error,
         "information_ratio": float(active.mean() * TRADING_DAYS / tracking_error) if tracking_error > 1e-12 else np.nan,
         "beta": beta(aligned["Portfolio"], aligned["Benchmark"]),
+        "alpha": jensen_alpha(aligned["Portfolio"], aligned["Benchmark"], risk_free_rate),
+        "rolling": rolling_benchmark_metrics(aligned["Portfolio"], aligned["Benchmark"], rolling_window),
     }
 
 
@@ -175,5 +248,6 @@ def portfolio_metrics(
         "confidence": confidence,
         "tail_observations": int((port <= -historical_var(port, confidence)).sum()),
         "diversification": diversification_metrics(returns, weights),
-        "benchmark_comparison": benchmark_comparison(port, benchmark_returns),
+        "return_attribution": return_attribution(returns, weights),
+        "benchmark_comparison": benchmark_comparison(port, benchmark_returns, risk_free_rate),
     }

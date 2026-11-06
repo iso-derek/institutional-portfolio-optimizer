@@ -8,7 +8,9 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from analytics import (TRADING_DAYS, benchmark_comparison, diversification_metrics,
-                       drawdown_series, portfolio_metrics, sharpe_ratio, sortino_ratio)
+                       drawdown_series, jensen_alpha, portfolio_metrics,
+                       return_attribution, rolling_benchmark_metrics, sharpe_ratio,
+                       sortino_ratio)
 from modelling import expected_sharpe
 from preprocessing import normalize_weights
 
@@ -65,6 +67,30 @@ class AnalyticsTests(unittest.TestCase):
         result = benchmark_comparison(returns, returns)
         self.assertEqual(result["tracking_error"], 0)
         self.assertTrue(np.isnan(result["information_ratio"]))
+        self.assertAlmostEqual(result["alpha"], 0)
+
+    def test_jensen_alpha_recovers_constant_capm_residual(self):
+        benchmark = pd.Series([-.02, .01, .03, -.01, .02])
+        daily_alpha = .0004
+        portfolio = benchmark + daily_alpha
+        self.assertAlmostEqual(jensen_alpha(portfolio, benchmark, 0), daily_alpha * TRADING_DAYS)
+
+    def test_rolling_metrics_use_only_window_observations(self):
+        benchmark = pd.Series([-.02, .01, .03, -.01, .02], index=pd.date_range("2026-01-01", periods=5))
+        portfolio = 2 * benchmark
+        result = rolling_benchmark_metrics(portfolio, benchmark, window=3)
+        self.assertEqual(len(result), 3)
+        np.testing.assert_allclose(result["beta"], 2.0, atol=1e-12)
+        np.testing.assert_allclose(result["tracking_error"],
+                                   benchmark.rolling(3).std().dropna() * np.sqrt(TRADING_DAYS))
+
+    def test_compounded_return_attribution_reconciles_exactly(self):
+        returns = pd.DataFrame({"A": [.10, -.05], "B": [0.0, .20]})
+        result = return_attribution(returns, pd.Series({"A": .5, "B": .5}))
+        expected_total = (1 + returns.mean(axis=1)).prod() - 1
+        self.assertAlmostEqual(result["portfolio_total_return"], expected_total)
+        self.assertAlmostEqual(result["by_asset"]["compounded_return_contribution"].sum(), expected_total)
+        self.assertAlmostEqual(result["reconciliation_residual"], 0)
 
     def test_tail_confidence_changes_loss_and_count(self):
         returns = pd.DataFrame({"A": np.linspace(-.2, .2, 101)})
