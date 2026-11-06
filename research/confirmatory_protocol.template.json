@@ -1,0 +1,18 @@
+{
+  "protocol_version": 1,
+  "status": "designed",
+  "locked_at": null,
+  "development_end": "2024-12-31",
+  "holdout_start": "2025-01-01",
+  "holdout_end": "2025-12-31",
+  "universe_sha256": "",
+  "parameters": {
+    "lookback": 126,
+    "rebalance_every": 21,
+    "max_weight": 0.35,
+    "cost_bps": 10,
+    "risk_free_rate": 0.02
+  },
+  "primary_outcomes": ["net_volatility", "maximum_drawdown", "one_day_cvar"],
+  "notes": "Template only. Replace the universe, validate it, insert its hash, then lock before acquiring or inspecting holdout outcomes."
+}

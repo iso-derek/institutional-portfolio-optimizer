@@ -1,0 +1,24 @@
+name: Security review
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  dependency-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install -r requirements-tested.txt pip-audit
+      - run: python -m pip check
+      - name: Audit known vulnerabilities
+        run: python -m pip_audit --desc
+        continue-on-error: true
+      - name: Enforce repository release evidence
+        run: python scripts/release_gate.py
