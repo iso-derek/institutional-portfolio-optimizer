@@ -71,20 +71,52 @@ institutional-portfolio-optimizer/
     research_artifacts.py
     visualisation.py
     research.py
+    confirmatory.py
   tests/
     test_analytics.py
     test_data.py
     test_app.py
     test_research.py
     test_research_artifacts.py
+    test_confirmatory.py
+    test_release_gate.py
   docs/
     COURSE_APPLICATIONS.md
     RESEARCH_PROTOCOL.md
+    CLEAN_INSTALL.md
+    CONFIRMATORY_STUDY.md
+    RELEASE_ACCEPTANCE.md
   notebooks/
   outputs/
   screenshots/
   assets/
 ```
+
+## System architecture
+
+```text
+deterministic demo or adjusted-price provider
+                    |
+                    v
+     provenance + bounded cleaning/alignment
+                    |
+       +------------+-------------+
+       |                          |
+       v                          v
+descriptive analytics       walk-forward research
+metrics / risk / stress     prior-only fits / drift / costs
+       |                          |
+       +------------+-------------+
+                    v
+          Streamlit views + exports
+
+point-in-time manifest -> locked protocol -> sealed holdout -> one-time evaluation
+```
+
+Financial calculations live in `src/`; `app.py` composes the interface rather
+than redefining the models. Research artifacts preserve settings, hashes and
+failures. The confirmatory module is a governance boundary: it validates universe
+and protocol records and will not reveal holdout rows while a protocol is locked.
 
 ## Methodology
 
@@ -96,13 +128,18 @@ institutional-portfolio-optimizer/
 6. Optimise allocations for maximum Sharpe Ratio and minimum volatility, rejecting numerically invalid solver output.
 7. Visualise allocation, risk, attribution, drawdown, correlation, and frontier results in Streamlit.
 
-## How To Run
+## Installation and how to run
 
 ```bash
 pip install -r requirements.txt
 python src/data_generation.py
 streamlit run app.py
 ```
+
+For the exact compatibility target use `requirements-tested.txt`. On Windows,
+create the virtual environment in a short path such as `C:\venvs\portfolio`;
+Streamlit's packaged assets can exceed legacy path limits inside deeply nested
+checkouts. See [the verified clean-install rehearsal](docs/CLEAN_INSTALL.md).
 
 The dashboard keeps downloads in memory and does not overwrite the checked-in
 price file. The optional data-generation command saves prices alongside
@@ -154,6 +191,42 @@ python -m unittest discover -s tests -v
 
 Tests use deterministic fixtures and mocked downloads. They do not establish live
 provider availability or validate a profitable investment strategy.
+
+The release gate checks required evidence and direct dependency pins:
+
+```bash
+python scripts/release_gate.py
+python scripts/validate_confirmatory.py research/universe_manifest.template.json research/confirmatory_protocol.template.json --allow-template
+```
+
+## Data sources and licensing
+
+Deterministic mode uses generated fictional prices and is explicitly labelled.
+Live mode requests adjusted prices through `yfinance`; provider completeness,
+corporate-action treatment and usage rights remain the user's responsibility.
+Frozen provider observations are not committed because redistribution rights have
+not been established. Metadata sidecars and SHA-256 hashes preserve provenance
+without claiming vendor certification. See the research protocol for cleaning,
+calendar, survivorship and selection-bias limitations.
+
+## Deployment
+
+The supported entry point is `streamlit run app.py`. A practical host needs
+Python 3.12 or 3.13, the tested requirements, outbound provider access only when
+live mode is enabled, and no committed secrets. Start in deterministic mode for
+reliable review. Public deployment is not yet approved: the current Pillow audit
+finding, hosting privacy/cost choices and final user acceptance remain explicit
+gates. See [release acceptance](docs/RELEASE_ACCEPTANCE.md) and [security](SECURITY.md).
+
+## Limitations and responsible use
+
+- Results are historical sample estimates, not forecasts or investment advice.
+- Descriptive optimised allocations are in-sample; the Research Lab is exploratory.
+- Proportional costs omit spreads, impact, taxes, borrow and execution delay.
+- Stress tests are simplified user-supplied scenarios, not macro forecasts.
+- A point-in-time/holdout framework is implemented, but the committed JSON files
+  are templates and no confirmatory performance result is claimed.
+- Dependency and data-provider risks must be reviewed before public deployment.
 
 ## Research Question
 
@@ -213,7 +286,7 @@ The dashboard helps answer:
 - More realistic execution, market-impact and cost models beyond proportional fees
 - Sector, country, asset-class and currency exposure classification
 - Deeper curve, credit-spread and cross-currency stress scenarios beyond the current first-order duration/FX lab
-- Point-in-time universe selection and a locked external holdout for confirmatory research
+- Acquire and verify the pre-designed point-in-time universe, then evaluate the locked external holdout once
 - PDF report export
 
 ## Author

@@ -1,0 +1,8 @@
+{
+  "manifest_version": 1,
+  "as_of_date": "2024-12-31",
+  "symbols": ["REPLACE_A", "REPLACE_B"],
+  "membership_source": "Replace with an archived, citable membership source",
+  "selection_rule": "Replace with the rule fixed before holdout acquisition",
+  "point_in_time_verified": false
+}
