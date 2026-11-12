@@ -1,7 +1,7 @@
 import { useEffect, useState, type KeyboardEvent } from "react";
 import { Pencil, RotateCcw, X } from "lucide-react";
 import type { Settings } from "../api";
-import { DEFAULTS, METHODS, useSettings } from "../context";
+import { DEFAULTS, FRENCH_DEFAULTS, INDUSTRIES, INDUSTRY_LABELS, METHODS, SOURCE_NAMES, useSettings } from "../context";
 import { money, percent, shortDate } from "../format";
 import { Segmented } from "./ui";
 
@@ -9,17 +9,18 @@ export default function PortfolioBar() {
   const { settings } = useSettings();
   const [open, setOpen] = useState(false);
   const method = METHODS.find((item) => item.key === settings.method)?.label;
+  const name = (ticker: string) => (settings.source === "french" ? INDUSTRY_LABELS[ticker] ?? ticker : ticker);
   return (
     <>
       <div className="portfolio-bar">
         <div className="chips">
           <strong style={{ marginRight: 4 }}>Your portfolio</strong>
-          <span className="chip">{settings.tickers.join(" · ")}</span>
+          <span className="chip">{settings.tickers.map(name).join(" · ")}</span>
           <span className="chip">{method}</span>
           <span className="chip">{money(settings.value, true)}</span>
           <span className="chip">{shortDate(settings.start)} – {shortDate(settings.end)}</span>
-          {settings.benchmark && <span className="chip">vs {settings.benchmark}</span>}
-          <span className="chip">{settings.live ? "Live market data" : "Demo data"}</span>
+          {settings.benchmark && <span className="chip">vs {name(settings.benchmark)}</span>}
+          <span className="chip">{SOURCE_NAMES[settings.source]}</span>
         </div>
         <button className="button" type="button" onClick={() => setOpen(true)}>
           <Pencil size={16} aria-hidden /> Edit portfolio
@@ -57,6 +58,20 @@ function SettingsDrawer({ onClose }: { onClose: () => void }) {
       set("tickers", draft.tickers.slice(0, -1));
     }
   };
+  const french = draft.source === "french";
+  const chooseSource = (source: Settings["source"]) => {
+    if (source === draft.source) return;
+    if (source === "french") {
+      setDraft({ ...draft, source, ...FRENCH_DEFAULTS, end: draft.end > FRENCH_DEFAULTS.end ? FRENCH_DEFAULTS.end : draft.end });
+    } else if (draft.source === "french") {
+      setDraft({ ...draft, source, tickers: DEFAULTS.tickers, benchmark: DEFAULTS.benchmark });
+    } else {
+      setDraft({ ...draft, source });
+    }
+    setTyping("");
+  };
+  const toggleIndustry = (key: string) =>
+    set("tickers", draft.tickers.includes(key) ? draft.tickers.filter((item) => item !== key) : [...draft.tickers, key]);
   const apply = () => {
     const tickers = typing ? Array.from(new Set([...draft.tickers, ...typing.toUpperCase().split(/[\s,]+/).filter(Boolean)])) : draft.tickers;
     if (!tickers.length) return setProblem("Add at least one holding.");
@@ -75,6 +90,30 @@ function SettingsDrawer({ onClose }: { onClose: () => void }) {
         </div>
         <div className="drawer-body">
           <div className="field">
+            <span>Prices</span>
+            <Segmented label="Data source" value={draft.source} onChange={chooseSource}
+              options={[{ key: "demo", label: "Demo" }, { key: "french", label: "Real US industries" }, { key: "yahoo", label: "Yahoo Finance" }]} />
+            <span className="small muted" style={{ fontWeight: 400 }}>
+              {french ? "Real daily returns for 12 US industries since 1926, from the Kenneth R. French Data Library (Dartmouth)."
+                : draft.source === "yahoo" ? "Live adjusted prices via yfinance. Yahoo's data is for personal use only and can be slow or unavailable."
+                : "Simulated, reproducible prices for trying the tools."}
+            </span>
+          </div>
+          {french ? (
+            <div className="field">
+              <span>Industries to hold</span>
+              <div className="ticker-chips">
+                {INDUSTRIES.map((industry) => (
+                  <button key={industry.key} type="button" className="ticker" aria-pressed={draft.tickers.includes(industry.key)}
+                    onClick={() => toggleIndustry(industry.key)}
+                    style={draft.tickers.includes(industry.key) ? { paddingRight: 10 } : { background: "transparent", color: "var(--muted)", border: "1px solid var(--line)", paddingRight: 10 }}>
+                    {industry.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+          <div className="field">
             <span>Holdings (up to 20 ticker symbols)</span>
             <div className="ticker-chips" onClick={(event) => (event.currentTarget.querySelector("input") as HTMLInputElement | null)?.focus()}>
               {draft.tickers.map((ticker) => (
@@ -89,6 +128,7 @@ function SettingsDrawer({ onClose }: { onClose: () => void }) {
                 onBlur={() => addTickers(typing)} placeholder="Add e.g. NVDA" aria-label="Add ticker" />
             </div>
           </div>
+          )}
           <div className="field">
             <span>How to split the money</span>
             <div className="method-grid">
@@ -111,7 +151,8 @@ function SettingsDrawer({ onClose }: { onClose: () => void }) {
               <input className="input" type="number" min={1} step={1000} value={draft.value} onChange={(event) => set("value", Math.max(1, Number(event.target.value)))} />
             </label>
             <label className="field"><span>Compare against</span>
-              <input className="input" value={draft.benchmark} placeholder="e.g. SPY, or blank" onChange={(event) => set("benchmark", event.target.value)} />
+              <input className="input" value={french ? "US stock market" : draft.benchmark} disabled={french} placeholder="e.g. SPY, or blank"
+                onChange={(event) => set("benchmark", event.target.value)} />
             </label>
             <label className="field"><span>Safe interest rate (% a year)</span>
               <input className="input" type="number" min={0} max={20} step={0.25} value={+(draft.risk_free * 100).toFixed(2)}
@@ -122,14 +163,6 @@ function SettingsDrawer({ onClose }: { onClose: () => void }) {
                 {[0.95, 0.975, 0.99].map((level) => <option key={level} value={level}>{percent(level, 1)}</option>)}
               </select>
             </label>
-          </div>
-          <div className="field">
-            <span>Prices</span>
-            <Segmented label="Data source" value={draft.live ? "live" : "demo"} onChange={(key) => set("live", key === "live")}
-              options={[{ key: "demo", label: "Demo (reproducible)" }, { key: "live", label: "Live market data" }]} />
-            <span className="small muted" style={{ fontWeight: 400 }}>
-              Live data comes from Yahoo Finance and can be slow or unavailable; the demo uses simulated prices.
-            </span>
           </div>
           {problem && <div className="notice notice-warn">{problem}</div>}
         </div>

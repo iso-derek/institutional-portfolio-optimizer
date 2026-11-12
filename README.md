@@ -150,6 +150,16 @@ The dashboard starts in deterministic demonstration mode so a reviewer receives 
 responsive, reproducible walkthrough without depending on a third-party provider.
 Select `Yahoo Finance adjusted prices` in the sidebar to request market data.
 
+### Real market data: Kenneth R. French Data Library
+
+Besides the simulated demo and Yahoo Finance (personal use only), Portfolio Lab can use **real daily returns for 12
+US industry portfolios from July 1926 onward** from the
+[Kenneth R. French Data Library](https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html)
+(Tuck School of Business at Dartmouth, built from CRSP data). The returns are converted to total-return indexes
+(start = 100), and the US market (market excess return plus the one-month T-bill rate) is the benchmark. The files
+are downloaded on demand and cached for 7 days in `data/cache/`, which is git-ignored; they are never redistributed.
+Cite as: Kenneth R. French, Data Library, Tuck School of Business at Dartmouth.
+
 ### Portfolio Lab web app (preview)
 
 A React web app with a FastAPI backend (`api/`) that reuses the same tested

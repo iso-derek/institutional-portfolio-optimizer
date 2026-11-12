@@ -20,7 +20,7 @@ export default function Risk() {
   if (!data) return <Skeleton height={480} />;
   const { tail, correlation, kpis } = data;
   const [historical, , shortfall] = tail.rows;
-  const benchmark = settings.benchmark && data.rolling ? settings.benchmark : null;
+  const benchmark = settings.benchmark && data.rolling ? data.sample.benchmark_name ?? settings.benchmark : null;
 
   return (
     <>

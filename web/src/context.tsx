@@ -11,7 +11,7 @@ export const DEFAULTS: Settings = {
   benchmark: "SPY",
   start: iso(fiveYearsAgo),
   end: iso(today),
-  live: false,
+  source: "demo",
   value: 100_000,
   risk_free: 0.02,
   confidence: 0.95,
@@ -25,12 +25,26 @@ export const METHODS: { key: Settings["method"]; label: string; blurb: string }[
   { key: "tilt", label: "Momentum tilt", blurb: "Leans toward past winners (simple heuristic)" },
 ];
 
+/** Real US industry portfolios from the Kenneth R. French Data Library. */
+export const INDUSTRIES: { key: string; label: string }[] = [
+  { key: "NODUR", label: "Consumer staples" }, { key: "DURBL", label: "Consumer durables" }, { key: "MANUF", label: "Manufacturing" },
+  { key: "ENRGY", label: "Energy" }, { key: "CHEMS", label: "Chemicals" }, { key: "BUSEQ", label: "Technology & business equipment" },
+  { key: "TELCM", label: "Telecoms" }, { key: "UTILS", label: "Utilities" }, { key: "SHOPS", label: "Retail & wholesale" },
+  { key: "HLTH", label: "Healthcare" }, { key: "MONEY", label: "Finance" }, { key: "OTHER", label: "Other industries" },
+];
+export const INDUSTRY_LABELS: Record<string, string> = { ...Object.fromEntries(INDUSTRIES.map((i) => [i.key, i.label])), MARKET: "US stock market" };
+export const FRENCH_DEFAULTS = { tickers: ["NODUR", "ENRGY", "BUSEQ", "HLTH", "MONEY", "UTILS"], benchmark: "MARKET", end: "2026-09-30" };
+export const SOURCE_NAMES: Record<string, string> = { demo: "Demo data", french: "Real US industries", yahoo: "Yahoo Finance" };
+
 const KEY = "portfolio-lab-settings";
 
 function load(): Settings {
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) ?? "null");
-    if (saved && Array.isArray(saved.tickers)) return { ...DEFAULTS, ...saved };
+    if (saved && Array.isArray(saved.tickers)) {
+      const { live, ...rest } = saved;
+      return { ...DEFAULTS, ...rest, source: rest.source ?? (live ? "yahoo" : "demo") };
+    }
   } catch {
     /* ignore */
   }

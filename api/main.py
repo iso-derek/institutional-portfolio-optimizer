@@ -31,8 +31,10 @@ from modelling import (black_litterman_placeholder, efficient_frontier, maximum_
 from preprocessing import calculate_returns, clean_prices, normalize_weights  # noqa: E402
 from research import walk_forward_study  # noqa: E402
 from stress import stress_portfolio  # noqa: E402
+from french_data import CITATION as FRENCH_CITATION, INDUSTRIES, LABELS as FRENCH_LABELS, MARKET, SOURCE_URL as FRENCH_URL, fetch_industry_prices  # noqa: E402
 
 Method = Literal["equal", "max_sharpe", "min_vol", "tilt"]
+Source = Literal["demo", "yahoo", "french"]
 METHOD_NAMES = {"equal": "Equal weight", "max_sharpe": "Maximum Sharpe", "min_vol": "Minimum volatility",
                 "tilt": "Historical-return tilt"}
 MAX_POINTS = 400
@@ -49,7 +51,7 @@ class Portfolio(BaseModel):
     benchmark: str
     start: date
     end: date
-    live: bool
+    source: Source
     value: float
     risk_free: float
     confidence: float
@@ -61,6 +63,7 @@ def portfolio_settings(
     benchmark: str = "SPY",
     start: date | None = None,
     end: date | None = None,
+    source: Source = "demo",
     live: bool = False,
     value: float = Query(100_000, gt=0, le=1e12),
     risk_free: float = Query(0.02, ge=0, le=0.2),
@@ -73,18 +76,22 @@ def portfolio_settings(
         raise HTTPException(400, "Enter between 1 and 20 ticker symbols.")
     if len(benchmark) > 20 or " " in benchmark or "," in benchmark:
         raise HTTPException(400, "Use a single benchmark symbol, or leave it blank.")
+    if live and source == "demo":  # older clients sent live=true for Yahoo prices
+        source = "yahoo"
     end = end or date.today()
     start = start or end - timedelta(days=365 * 5)
     if start >= end:
         raise HTTPException(400, "The start date must be before the end date.")
-    return Portfolio(tickers=symbols, benchmark=benchmark, start=start, end=end, live=live, value=value,
+    return Portfolio(tickers=symbols, benchmark=benchmark, start=start, end=end, source=source, value=value,
                      risk_free=risk_free, confidence=confidence, method=method)
 
 
 # ---------------------------------------------------------------- cached calculations
 @lru_cache(maxsize=16)
-def _prices(requested: tuple[str, ...], start: date, end: date, live: bool) -> pd.DataFrame:
-    if live:
+def _prices(requested: tuple[str, ...], start: date, end: date, source: str) -> pd.DataFrame:
+    if source == "french":
+        return fetch_industry_prices(list(requested), start, end)
+    if source == "yahoo":
         return fetch_price_data(list(requested), start=start, end=end, save_path=None)
     prices = generate_synthetic_prices(list(requested), start=start, end=end)
     prices.attrs.update(source="synthetic", synthetic=True, price_basis="fictional prices",
@@ -95,7 +102,7 @@ def _prices(requested: tuple[str, ...], start: date, end: date, live: bool) -> p
 @lru_cache(maxsize=16)
 def _inputs(p: Portfolio):
     requested = tuple(dict.fromkeys(p.tickers + ((p.benchmark,) if p.benchmark else ())))
-    raw = _prices(requested, p.start, p.end, p.live)
+    raw = _prices(requested, p.start, p.end, p.source)
     provenance = dict(raw.attrs)
     all_returns = calculate_returns(raw)
     prices = clean_prices(raw)
@@ -104,7 +111,15 @@ def _inputs(p: Portfolio):
         raise ValueError("None of these assets have enough price history for the chosen dates.")
     returns = all_returns[available]
     benchmark_returns = all_returns[p.benchmark] if p.benchmark and p.benchmark in all_returns else None
+    if p.source == "french":  # show industry names, not library codes, everywhere downstream
+        prices, returns = prices.rename(columns=FRENCH_LABELS), returns.rename(columns=FRENCH_LABELS)
+        if benchmark_returns is not None:
+            benchmark_returns = benchmark_returns.rename(FRENCH_LABELS.get(p.benchmark, p.benchmark))
     return prices, returns, benchmark_returns, provenance
+
+
+def display_name(p: Portfolio, ticker: str) -> str:
+    return FRENCH_LABELS.get(ticker, ticker) if p.source == "french" else ticker
 
 
 @lru_cache(maxsize=16)
@@ -132,7 +147,7 @@ def _weights(p: Portfolio) -> tuple[pd.Series, list[str]]:
 def _analysis(p: Portfolio):
     prices, returns, benchmark_returns, provenance = _inputs(p)
     weights, notes = _weights(p)
-    metrics = portfolio_metrics(returns, weights, p.risk_free, benchmark=p.benchmark,
+    metrics = portfolio_metrics(returns, weights, p.risk_free, benchmark=display_name(p, p.benchmark),
                                 benchmark_returns=benchmark_returns, confidence=p.confidence)
     return prices, returns, benchmark_returns, provenance, weights, notes, metrics
 
@@ -178,11 +193,16 @@ def series(frame: pd.DataFrame | pd.Series, names: dict[str, str] | None = None)
 
 
 def sample_info(prices: pd.DataFrame, returns: pd.DataFrame, provenance: dict, p: Portfolio) -> dict:
-    missing = sorted(set(p.tickers) - set(returns.columns))
+    missing = sorted(display_name(p, t) for t in p.tickers if display_name(p, t) not in set(returns.columns))
     return {
         "synthetic": bool(provenance.get("synthetic")),
-        "source": "Simulated demonstration prices" if provenance.get("synthetic") else "Yahoo Finance adjusted close prices",
-        "fallback_reason": provenance.get("fallback_reason") if provenance.get("synthetic") and p.live else None,
+        "source": ("Simulated demonstration prices" if provenance.get("synthetic")
+                   else FRENCH_CITATION if provenance.get("source") == "french" else "Yahoo Finance adjusted close prices"),
+        "source_url": provenance.get("source_url"),
+        "data_through": provenance.get("data_through"),
+        "average_risk_free": provenance.get("average_risk_free"),
+        "benchmark_name": display_name(p, p.benchmark) if p.benchmark else None,
+        "fallback_reason": provenance.get("fallback_reason") if provenance.get("synthetic") and p.source == "yahoo" else None,
         "start": prices.index[0].strftime("%Y-%m-%d"),
         "end": prices.index[-1].strftime("%Y-%m-%d"),
         "observations": int(len(returns)),
@@ -197,7 +217,14 @@ def defaults():
     today = date.today()
     return {"tickers": list(DEFAULT_TICKERS), "benchmark": "SPY", "start": str(today - timedelta(days=365 * 5)),
             "end": str(today), "value": 100_000, "risk_free": 0.02, "confidence": 0.95, "method": "equal",
-            "methods": [{"key": key, "label": label} for key, label in METHOD_NAMES.items()]}
+            "methods": [{"key": key, "label": label} for key, label in METHOD_NAMES.items()],
+            "sources": [
+                {"key": "demo", "label": "Demo (simulated)", "note": "Reproducible fictional prices."},
+                {"key": "french", "label": "Real US industries", "note": FRENCH_CITATION, "url": FRENCH_URL},
+                {"key": "yahoo", "label": "Yahoo Finance", "note": "Live adjusted prices via yfinance; Yahoo data is for personal use only."},
+            ],
+            "industries": [{"key": key, "label": label} for key, label in INDUSTRIES.items()],
+            "market": MARKET}
 
 
 @app.get("/api/analysis")
@@ -206,7 +233,7 @@ def analysis(p: Portfolio = Depends(portfolio_settings)):
     comparison = m["benchmark_comparison"] or {}
     benchmark_ok = benchmark_returns is not None
     if p.benchmark and not benchmark_ok:
-        notes.append(f"Benchmark {p.benchmark} has no usable prices for these dates, so benchmark comparisons are hidden.")
+        notes.append(f"Benchmark {display_name(p, p.benchmark)} has no usable prices for these dates, so benchmark comparisons are hidden.")
     growth = None
     if comparison:
         growth = series(comparison["growth"].rename(columns={"Benchmark": "benchmark", "Portfolio": "portfolio"}))

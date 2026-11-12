@@ -86,7 +86,7 @@ export default function Stress() {
                     <BarChart data={result.assets} layout="vertical" margin={{ top: 0, right: 24, bottom: 0, left: 0 }}>
                       <CartesianGrid horizontal={false} />
                       <XAxis type="number" domain={[(low: number) => Math.min(low, 0), (high: number) => Math.max(high, 0)]} tickFormatter={(value) => money(value, true)} tickLine={false} axisLine={false} />
-                      <YAxis type="category" dataKey="asset" width={56} tickLine={false} axisLine={false} />
+                      <YAxis type="category" dataKey="asset" width={150} tickLine={false} axisLine={false} />
                       <ReferenceLine x={0} stroke="var(--faint)" />
                       <Tooltip cursor={{ fill: "var(--surface-2)" }} content={({ active, payload }) => {
                         const row = payload?.[0]?.payload as StressResult["assets"][number] | undefined;

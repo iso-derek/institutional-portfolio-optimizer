@@ -5,7 +5,7 @@ import { Notice } from "./components/ui";
 
 export interface Point { date: string; [series: string]: number | string | null }
 export interface Analysis {
-  sample: { synthetic: boolean; source: string; fallback_reason: string | null; start: string; end: string; observations: number; assets: string[]; missing: string[] };
+  sample: { synthetic: boolean; source: string; source_url: string | null; data_through: string | null; benchmark_name: string | null; fallback_reason: string | null; start: string; end: string; observations: number; assets: string[]; missing: string[] };
   notes: string[];
   method: string;
   weights: Weight[];
@@ -46,7 +46,7 @@ export function SampleNotes({ data }: { data: Analysis }) {
       {sample.missing.length > 0 && <Notice tone="warn">Left out for lack of price history: {sample.missing.join(", ")}.</Notice>}
       {notes.map((note) => <Notice key={note}>{note}</Notice>)}
       <div className="small muted">
-        {sample.source} · {longDate(sample.start)} – {longDate(sample.end)} · {sample.observations.toLocaleString()} trading days ·
+        {sample.source_url ? <a href={sample.source_url} target="_blank" rel="noreferrer">{sample.source}</a> : sample.source} · {longDate(sample.start)} – {longDate(sample.end)} · {sample.observations.toLocaleString()} trading days ·
         rebalanced daily, before costs and tax
       </div>
     </div>

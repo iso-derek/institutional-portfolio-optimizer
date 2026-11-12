@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 
 export type Method = "equal" | "max_sharpe" | "min_vol" | "tilt";
+export type Source = "demo" | "french" | "yahoo";
 
 export interface Settings {
   tickers: string[];
   benchmark: string;
   start: string;
   end: string;
-  live: boolean;
+  source: Source;
   value: number;
   risk_free: number;
   confidence: number;
@@ -22,7 +23,7 @@ export function query(settings: Settings, extra: Record<string, string | number>
     benchmark: settings.benchmark,
     start: settings.start,
     end: settings.end,
-    live: String(settings.live),
+    source: settings.source,
     value: String(settings.value),
     risk_free: String(settings.risk_free),
     confidence: String(settings.confidence),

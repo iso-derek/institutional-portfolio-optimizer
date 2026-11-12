@@ -11,7 +11,7 @@ export default function Performance() {
   if (!data) return <Skeleton height={480} label="Crunching your portfolio" />;
   const { kpis } = data;
   const finalValue = kpis.total_return == null ? null : settings.value * (1 + kpis.total_return);
-  const benchmark = settings.benchmark && kpis.benchmark_total_return != null ? settings.benchmark : null;
+  const benchmark = settings.benchmark && kpis.benchmark_total_return != null ? data.sample.benchmark_name ?? settings.benchmark : null;
   const assets = data.sample.assets;
   const contributions = [...data.attribution].sort((a, b) => b.contribution - a.contribution);
 
@@ -102,7 +102,7 @@ export default function Performance() {
               <BarChart data={contributions} layout="vertical" margin={{ top: 0, right: 24, bottom: 0, left: 0 }}>
                 <CartesianGrid horizontal={false} />
                 <XAxis type="number" tickFormatter={(value) => percent(value, 0)} tickLine={false} axisLine={false} />
-                <YAxis type="category" dataKey="asset" width={56} tickLine={false} axisLine={false} />
+                <YAxis type="category" dataKey="asset" width={150} tickLine={false} axisLine={false} />
                 <Tooltip cursor={{ fill: "var(--surface-2)" }} content={({ active, payload }) => {
                   const row = payload?.[0]?.payload as (typeof contributions)[number] | undefined;
                   return active && row ? <Tip title={row.asset} rows={[
