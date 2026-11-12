@@ -2,7 +2,8 @@ pandas
 numpy
 scipy
 yfinance
-streamlit
+streamlit>=1.65,<2
 plotly
 python-dateutil
+pillow>=13,<14
 scikit-learn>=1.4

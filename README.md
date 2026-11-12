@@ -214,8 +214,8 @@ calendar, survivorship and selection-bias limitations.
 The supported entry point is `streamlit run app.py`. A practical host needs
 Python 3.12 or 3.13, the tested requirements, outbound provider access only when
 live mode is enabled, and no committed secrets. Start in deterministic mode for
-reliable review. Public deployment is not yet approved: the current Pillow audit
-finding, hosting privacy/cost choices and final user acceptance remain explicit
+reliable review. Public deployment is not yet approved: an audit rerun to
+confirm the Pillow 13 upgrade, hosting privacy/cost choices and final user acceptance remain explicit
 gates. See [release acceptance](docs/RELEASE_ACCEPTANCE.md) and [security](SECURITY.md).
 
 ## Limitations and responsible use

@@ -36,23 +36,23 @@
 ## Tests
 
 - Current fresh-environment result: 51 tests passed in 39.830 seconds on Python 3.12; compilation and the release gate passed and `pip check` reported no broken requirements.
-- The 6 November 2026 `pip-audit` found 39 advisories in transitive Pillow 12.3.0. All list Pillow 13.0.0 as the fix, while Streamlit 1.65.0 constrains Pillow below 13. This is documented in `SECURITY.md` and remains visible in non-blocking CI.
+- The 6 November 2026 `pip-audit` found 39 advisories in transitive Pillow 12.3.0, all listing Pillow 13.0.0 as the fix. On 12 November 2026 the tested set moved to Streamlit 1.67.0 and a direct `pillow==13.0.0` pin; 51 tests pass and `pip check` is clean locally on Python 3.13. The audit has not yet been rerun against this set; see `SECURITY.md`.
 
 ## Known issues and blockers
 
 - Provider data is retained locally but not committed because redistribution rights have not been established.
 - The real-data run recorded two disclosed shrinkage-risk-parity optimiser fallbacks.
 - The committed point-in-time universe and protocol are templates; no confirmatory holdout result exists yet.
-- Deployment acceptance remains blocked by the unresolved Pillow advisories and by the need to choose a hosting/privacy/cost configuration.
+- Deployment acceptance remains blocked until the dependency audit confirms the Pillow 13 upgrade clears the advisories, and by the need to choose a hosting/privacy/cost configuration.
 
 ## Next three priorities
 
 1. Replace the universe template with a licensed, archived point-in-time membership source and lock the protocol before acquiring holdout outcomes.
-2. Upgrade when Streamlit supports the fixed Pillow release, then rerun the blocking dependency audit.
+2. Rerun the dependency audit in CI against the Pillow 13.0.0 pin and confirm the 39 advisories are cleared.
 3. Review the release candidate and approve or reject a specific deployment target with its privacy and cost settings.
 
 ## Remaining before a stable release
 
 - Verified point-in-time universe acquisition and one-time confirmatory holdout evaluation.
-- Resolution or explicit risk acceptance for the current Pillow advisories.
+- A clean dependency audit confirming the Pillow 13.0.0 upgrade resolves the earlier advisories.
 - Final review and deployment approval for a named target; no public deployment has been performed.

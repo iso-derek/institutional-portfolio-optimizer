@@ -25,9 +25,10 @@ channel when enabled, or contact the repository owner privately.
 
 The 6 November 2026 clean-environment audit reported 39 advisories against the
 transitive `Pillow 12.3.0` package, all naming `13.0.0` as the fix. Streamlit
-1.65.0 constrains Pillow below 13, so that fix cannot be applied without an
-upstream-compatible Streamlit release. The app does not accept image uploads or
-process untrusted images, reducing exposure but not eliminating dependency risk.
-The audit remains visible and non-blocking in CI; deployment approval is withheld
-until the dependency constraint can be resolved or a documented risk decision is
-made. Recheck before every release.
+1.65.0 constrained Pillow below 13. On 12 November 2026 the tested set moved to
+Streamlit 1.67.0, which permits Pillow 13, and Pillow is now pinned directly at
+`13.0.0` (`pillow>=13,<14` in `requirements.txt`). Tests and `pip check` pass
+with this set. The dependency audit has not yet been rerun against it, so
+deployment approval stays withheld until the CI audit confirms the advisories
+are cleared. The app does not accept image uploads or process untrusted images.
+Recheck before every release.

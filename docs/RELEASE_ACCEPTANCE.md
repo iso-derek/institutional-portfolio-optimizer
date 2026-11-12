@@ -16,7 +16,8 @@
 ## Acceptance status
 
 The software is a release candidate for review, not an approved public
-deployment. Deployment remains blocked by the unresolved transitive Pillow
-advisories described in `SECURITY.md`, the absence of a verified confirmatory
+deployment. Deployment remains blocked until a dependency audit confirms that
+the Pillow 13.0.0 upgrade described in `SECURITY.md` clears the earlier
+advisories, and by the absence of a verified confirmatory
 dataset, and the requirement for explicit user approval of a hosting target and
 operating-cost/privacy configuration.
