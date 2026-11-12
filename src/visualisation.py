@@ -7,10 +7,13 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 
-def line_chart(series: pd.Series, title: str, y_label: str):
+def line_chart(series: pd.Series, title: str, y_label: str, percent: bool = False):
     frame = series.reset_index()
     frame.columns = ["Date", y_label]
-    return px.line(frame, x="Date", y=y_label, title=title)
+    figure = px.line(frame, x="Date", y=y_label, title=title)
+    if percent:
+        figure.update_yaxes(tickformat=".0%")
+    return figure
 
 
 def allocation_chart(weights: pd.Series):
