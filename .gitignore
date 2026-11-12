@@ -15,3 +15,5 @@ screenshots/*.png
 outputs/
 /.venv/
 /runs/
+web/node_modules/
+web/dist/

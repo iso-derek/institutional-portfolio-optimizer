@@ -150,6 +150,27 @@ The dashboard starts in deterministic demonstration mode so a reviewer receives 
 responsive, reproducible walkthrough without depending on a third-party provider.
 Select `Yahoo Finance adjusted prices` in the sidebar to request market data.
 
+### Portfolio Lab web app (preview)
+
+A React web app with a FastAPI backend (`api/`) that reuses the same tested
+modules in `src/`. Tabs: Performance, Risk, Diversification, Optimise,
+Backtest, Stress test, and Guide & data. You edit the portfolio from the
+**Edit portfolio** drawer, which sets holdings, strategy, dates, amount and
+benchmark. Every figure is labelled in plain English.
+
+Requires Python 3.12+ and Node.js 20+.
+
+```bash
+pip install -r requirements.txt
+cd web && npm install && npm run build && cd ..
+python -m uvicorn api.main:app --port 8000
+```
+
+Open http://localhost:8000. For development with instant reloads, run
+`python -m uvicorn api.main:app --reload --port 8000` and, in `web/`,
+`npm run dev`, then open http://localhost:5173. The Streamlit dashboard
+still works unchanged.
+
 ## Applying Finance Learning
 
 The first improvement sprint applies **BMC equities** and **Bloomberg Finance
